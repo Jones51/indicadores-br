@@ -1,0 +1,9 @@
+# Perfil de produção usado pelo GitHub Actions: `dbt build --profiles-dir ../ci`.
+# O warehouse publicado na release `warehouse` é este arquivo (data/prod.duckdb).
+indicadores_br:
+  target: prod
+  outputs:
+    prod:
+      type: duckdb
+      path: "{{ env_var('DUCKDB_PATH', '../data/prod.duckdb') }}"
+      threads: 4

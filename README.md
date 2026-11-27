@@ -43,7 +43,7 @@ automatically on every push — with incremental ingestion reconciled weekly aga
 | **Environments** | local `dev` vs CI `prod` targets | [`ci/profiles.yml`](ci/profiles.yml) |
 | **Published warehouse** | one `ATTACH`, queryable by anyone | [Query it](#-query-the-published-warehouse) |
 | **Architecture decisions** | numbered ADRs | [`docs/adr/`](docs/adr/) |
-| **Parallel agents** | Claude Code subagents in git worktrees, one PR per agent, reviewed integration | [How it was done](#-parallel-agent-development) |
+| **Parallel agents** | Claude Code subagents in git worktrees (Orca IDE), one PR per agent, reviewed integration | [How it was done](#-parallel-agent-development) |
 
 ---
 
@@ -332,7 +332,8 @@ A new series = a new entry in `SERIES_BCB` or `SERIES_IBGE` ([`config.py`](src/i
 
 ## 🤖 Parallel agent development
 
-This project is also a study in **agentic development**: several features were built by Claude
+This project is also a study in **agentic development**, built in the
+[Orca](https://github.com/stablyai/orca) IDE: several features were built by Claude
 Code subagents working **at the same time**, each in its own
 [git worktree](https://git-scm.com/docs/git-worktree) and branch, with an orchestrator agent
 planning, reviewing and integrating. The full process is in [`CLAUDE.md`](CLAUDE.md#desenvolvimento-com-agentes-em-paralelo) (in Portuguese).

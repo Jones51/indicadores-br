@@ -178,7 +178,7 @@ jobs:
         run: |
           gh release view warehouse >/dev/null 2>&1 || \
             gh release create warehouse --title "warehouse" --latest=false \
-              --notes "Warehouse DuckDB atualizado pelo GitHub Actions (incremental a cada push na main; reconciliado com uma carga full toda segunda-feira). prod.anterior.duckdb é a versão anterior (rollback)."
+              --notes "DuckDB warehouse refreshed by GitHub Actions (incremental on every push to main; reconciled against a full reload every Monday). prod.anterior.duckdb is the previous version (rollback)."
           # Backup depende só de o arquivo abrir: um schema antigo foi publicado depois de passar
           # no dbt build e é justamente a versão que se quer para rollback. Corrompido ou
           # ausente não sobrescreve o prod.anterior.duckdb que já existe.

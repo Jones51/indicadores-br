@@ -1,52 +1,56 @@
-# Indicadores Econômicos do Brasil — Python + dbt + DuckDB
+# Brazil Economic Indicators Pipeline — Python + dbt + DuckDB
 
 [![dbt build & publish](https://github.com/Jones51/indicadores-br/actions/workflows/dbt_build.yml/badge.svg?branch=main)](https://github.com/Jones51/indicadores-br/actions/workflows/dbt_build.yml)
 
 ```mermaid
 flowchart LR
-    api["API SGS<br/>Banco Central"] -->|httpx| py["src/indicadores<br/>(Python)"]
-    sidra["API SIDRA<br/>IBGE"] -->|httpx| py
+    api["SGS API<br/>Central Bank"] -->|httpx| py["src/indicadores<br/>(Python)"]
+    sidra["SIDRA API<br/>IBGE"] -->|httpx| py
     py --> raw[("raw.bcb_sgs<br/>DuckDB")]
     py --> rawi[("raw.ibge_sidra<br/>DuckDB")]
-    py --> aud[("raw.cargas<br/>auditoria")]
+    py --> aud[("raw.cargas<br/>audit log")]
     raw --> stg["staging<br/>stg_bcb__sgs"]
     rawi --> stgi["staging<br/>stg_ibge__sidra"]
     stg --> mart["marts<br/>fct_indicadores_mensais"]
     mart --> rel["Release<br/>prod.duckdb"]
-    mart --> docs["GitHub Pages<br/>dbt Docs"]
+    mart --> docs["GitHub Pages<br/>dbt Docs + dashboard"]
 ```
 
-Pipeline público de indicadores macroeconômicos do Brasil (Selic, IPCA e dólar PTAX), extraídos do
-SGS do Banco Central, modelados com dbt e atualizados automaticamente a cada push (ingestão
-incremental, reconciliada toda semana com uma carga completa).
+A public pipeline of Brazilian macroeconomic indicators (Selic policy rate, IPCA inflation and the
+PTAX USD/BRL rate), extracted from the Central Bank's SGS API, modeled with dbt and refreshed
+automatically on every push — with incremental ingestion reconciled weekly against a full reload.
 
-- Ingere as séries do BCB em Python e modela em marts testados e documentados
-- Publica o site de documentação e o warehouse pronto — aberto a qualquer pessoa, sem credenciais
-- Roda sozinho no GitHub Actions: a cada push na `main` e toda segunda-feira
+- Ingests the Central Bank (BCB) and IBGE series in Python and models them into tested, documented marts
+- Publishes the docs site, a dashboard and the finished warehouse — open to anyone, no credentials
+- Runs itself on GitHub Actions: every push to `main` and every Monday
 
-> **IBGE (SIDRA)** já é ingerido até a camada staging (desocupação PNAD e PIB trimestral,
-> [ADR 0004](docs/adr/0004-extrator-ibge-sidra.md)); a junção ao mart está no [Roadmap](#-roadmap).
+> **IBGE (SIDRA)** is already ingested up to the staging layer (PNAD unemployment and quarterly GDP,
+> [ADR 0004](docs/adr/0004-extrator-ibge-sidra.md)); joining it into the mart is on the [Roadmap](#-roadmap).
 
-| O que construí | Como implementei | Onde olhar |
+> **Language note:** documentation is in English; domain identifiers (tables, columns, functions,
+> CLI) are kept in Portuguese, matching the source data and the project's conventions
+> ([`CLAUDE.md`](CLAUDE.md)). ADRs are in Portuguese.
+
+| What I Built | How I Implemented | Where to Look |
 | --- | --- | --- |
-| **Ingestão** | extrator por fonte, parsing puro separado do HTTP, carga **incremental** com margem de revisão, idempotente e auditada | [`src/indicadores/`](src/indicadores/) · [ADR 0006](docs/adr/0006-ingestao-incremental.md) |
-| **Segurança dos dados** | estado validado, reconciliação semanal "full vence", portão dbt, backup e rollback do warehouse | [Produção](#-produção) |
-| **Pipeline dbt** | sources → `staging/` → `marts/` | [`transform/models/`](transform/models/) |
-| **Testes de dados** | teste de grão (`unique` / teste singular) + `not_null` nas chaves | [`_marts.yml`](transform/models/marts/_marts.yml) |
-| **dbt Docs hospedado** | linhagem (inclusive por coluna), descrições, testes | [Site de docs](https://jones51.github.io/indicadores-br/) |
-| **Dashboard público** | HTML estático + D3, alimentado por um JSON que a CI exporta do mart | [Dashboard](https://jones51.github.io/indicadores-br/dashboard/) |
-| **CI pública** | lint + testes + build + publicação a cada push | [Workflow](https://github.com/Jones51/indicadores-br/actions) |
-| **Ambientes** | `dev` local vs `prod` na CI | [`ci/profiles.yml`](ci/profiles.yml) |
-| **Warehouse publicado** | um `ATTACH`, consultável por qualquer um | [Consultar](#-consultar-o-warehouse-publicado) |
-| **Decisões de arquitetura** | ADRs numerados | [`docs/adr/`](docs/adr/) |
-| **Agentes em paralelo** | subagentes em git worktrees, PR por agente, integração revisada | [Como foi feito](#-desenvolvimento-com-agentes-em-paralelo) |
+| **Ingestion** | one extractor per source, pure parsing split from HTTP, **incremental** load with a revision margin — idempotent and audited | [`src/indicadores/`](src/indicadores/) · [ADR 0006](docs/adr/0006-ingestao-incremental.md) |
+| **Data safety** | validated state, weekly "full wins" reconciliation, dbt quality gate, warehouse backup and rollback | [Production](#-production) |
+| **dbt pipeline** | sources → `staging/` → `marts/` | [`transform/models/`](transform/models/) |
+| **Data tests** | grain tests (`unique` / singular test) + `not_null` on keys | [`_marts.yml`](transform/models/marts/_marts.yml) |
+| **Hosted dbt docs** | lineage (including column-level), descriptions, tests | [Live docs site](https://jones51.github.io/indicadores-br/) |
+| **Public dashboard** | static HTML + D3, fed by a JSON the CI exports from the mart | [Dashboard](https://jones51.github.io/indicadores-br/dashboard/) |
+| **Public CI** | lint + tests + build + publish on every push; `main` is protected (PR + green CI required) | [Actions workflow](https://github.com/Jones51/indicadores-br/actions) |
+| **Environments** | local `dev` vs CI `prod` targets | [`ci/profiles.yml`](ci/profiles.yml) |
+| **Published warehouse** | one `ATTACH`, queryable by anyone | [Query it](#-query-the-published-warehouse) |
+| **Architecture decisions** | numbered ADRs | [`docs/adr/`](docs/adr/) |
+| **Parallel agents** | Claude Code subagents in git worktrees, one PR per agent, reviewed integration | [How it was done](#-parallel-agent-development) |
 
 ---
 
-## ⚙️ O pipeline dbt
+## ⚙️ The dbt Pipeline
 
-As séries brutas passam por três camadas — source declarada → view de staging tipada → mart
-mensal — com testes barrando cada build. O DAG completo:
+Raw series flow through three layers — declared sources → typed staging views → monthly mart —
+with tests gating every build. The full DAG:
 
 ```mermaid
 flowchart LR
@@ -57,93 +61,94 @@ flowchart LR
     stgi -.-> t2{{"assert_stg_ibge_unico_por_serie_data"}}
 ```
 
-| Camada | Modelo | Grão | Materialização |
+| Layer | Model | Grain | Materialization |
 | --- | --- | --- | --- |
-| Source | `raw.bcb_sgs` | uma linha por (série, data), formato longo | tabela (carga Python) |
-| Source | `raw.ibge_sidra` | uma linha por (série, período), formato longo | tabela (carga Python) |
-| Source | `raw.cargas` | uma linha por (execução, série, modo): auditoria da ingestão | tabela (carga Python) |
-| Source | `raw.reconciliacoes` | uma linha por (execução, série): reconciliação incremental × full | tabela (carga Python) |
-| Staging | `stg_bcb__sgs` | uma linha por (série, data), tipada | view |
-| Staging | `stg_ibge__sidra` | uma linha por (série, data), tipada | view |
-| Marts | `fct_indicadores_mensais` | uma linha por mês, uma coluna por indicador | table |
+| Source | `raw.bcb_sgs` | one row per (series, date), long format | table (Python load) |
+| Source | `raw.ibge_sidra` | one row per (series, period), long format | table (Python load) |
+| Source | `raw.cargas` | one row per (run, series, mode): ingestion audit log | table (Python load) |
+| Source | `raw.reconciliacoes` | one row per (run, series): incremental × full reconciliation | table (Python load) |
+| Staging | `stg_bcb__sgs` | one row per (series, date), typed | view |
+| Staging | `stg_ibge__sidra` | one row per (series, date), typed | view |
+| Marts | `fct_indicadores_mensais` | one row per month, one column per indicator | table |
 
-Colunas do mart:
+Mart columns:
 
-| Coluna | Descrição |
+| Column | Description |
 | --- | --- |
-| `mes_referencia` | primeiro dia do mês (chave) |
-| `selic_meta_aa` | meta Selic vigente no último dia do mês (% a.a.) |
-| `ipca_mensal` | variação mensal do IPCA (%); nulo no mês corrente até a divulgação |
-| `ipca_12m` | IPCA acumulado em 12 meses (%); nulo no mês corrente até a divulgação |
-| `juro_real_ex_post_aa` | Selic meta descontada do IPCA 12m pela equação de Fisher (% a.a.); nulo se faltar insumo |
-| `dolar_ptax_medio` | média mensal da PTAX venda (R$/US$) |
-| `dolar_ptax_fim_mes` | PTAX venda do último dia útil do mês (R$/US$) |
+| `mes_referencia` | first day of the reference month (key) |
+| `selic_meta_aa` | Selic target rate in force on the last day of the month (% p.a.) |
+| `ipca_mensal` | monthly IPCA inflation (%); null for the current month until released |
+| `ipca_12m` | 12-month accumulated IPCA (%); null for the current month until released |
+| `juro_real_ex_post_aa` | Selic deflated by 12-month IPCA via the Fisher equation (% p.a.); null if an input is missing |
+| `dolar_ptax_medio` | monthly average of the PTAX selling rate (BRL per USD) |
+| `dolar_ptax_fim_mes` | PTAX selling rate on the last business day of the month (BRL per USD) |
 
-E os recursos do dbt que fazem o trabalho:
+And the dbt features doing the work:
 
-| Recurso do dbt | Como usei |
+| dbt Feature | How I Used It |
 | --- | --- |
-| Sources declaradas (sem caminhos fixos no SQL) | [`_sources.yml`](transform/models/staging/_sources.yml) + `source('raw', 'bcb_sgs')`, com `freshness` de 8 dias |
-| Dependências entre modelos | `ref()` em tudo a jusante; o dbt resolve ordem e paralelismo |
-| Materializações | por pasta no [`dbt_project.yml`](transform/dbt_project.yml): `staging/` → `view`, `marts/` → `table` |
-| Testes de dados | `unique` + `not_null` em `mes_referencia`; `accepted_values` nos nomes de série; teste singular de unicidade por (série, data) ([`assert_stg_bcb_unico_por_serie_data`](transform/tests/assert_stg_bcb_unico_por_serie_data.sql)) |
-| Análise estática | `+static_analysis: strict`: SQL validado na compilação, linhagem por coluna no Docs v2 |
-| Schemas customizados | macro [`generate_schema_name`](transform/macros/generate_schema_name.sql): `staging` e `marts` sem prefixo do target |
-| Ambientes | `dev` local ([`transform/profiles.yml`](transform/profiles.yml)) vs `prod` na CI ([`ci/profiles.yml`](ci/profiles.yml)) |
+| Declared sources (no hardcoded paths in SQL) | [`_sources.yml`](transform/models/staging/_sources.yml) + `source('raw', 'bcb_sgs')`, with an 8-day `freshness` check |
+| Model dependencies | `ref()` everywhere downstream; dbt resolves order and parallelism |
+| Materializations | set per folder in [`dbt_project.yml`](transform/dbt_project.yml): `staging/` → `view`, `marts/` → `table` |
+| Data tests | `unique` + `not_null` on `mes_referencia`; `accepted_values` on series names; singular uniqueness tests per (series, date) ([`assert_stg_bcb_unico_por_serie_data`](transform/tests/assert_stg_bcb_unico_por_serie_data.sql)) |
+| Static analysis | `+static_analysis: strict`: SQL validated at compile time, column-level lineage in Docs v2 |
+| Custom schemas | [`generate_schema_name`](transform/macros/generate_schema_name.sql) macro: `staging` and `marts` without the target prefix |
+| Environments | local `dev` ([`transform/profiles.yml`](transform/profiles.yml)) vs CI `prod` ([`ci/profiles.yml`](ci/profiles.yml)) |
 
-`dbt build` compila o SQL, materializa os modelos e falha se qualquer teste falhar — o mesmo comando
-local e na CI.
+`dbt build` compiles SQL, materializes models, and fails the run if any test fails — same command
+locally and in CI.
 
 ---
 
-## 🚀 Produção
+## 🚀 Production
 
-O GitHub Actions roda o pipeline inteiro, sem depender de máquina local:
-[`.github/workflows/dbt_build.yml`](.github/workflows/dbt_build.yml). A CI tem **estado**: o
-`prod.duckdb` publicado na release é o ponto de partida da execução seguinte
+GitHub Actions runs the whole pipeline — no laptop required:
+[`.github/workflows/dbt_build.yml`](.github/workflows/dbt_build.yml). The CI is **stateful**: the
+`prod.duckdb` published on the release is the starting point of the next run
 ([ADR 0006](docs/adr/0006-ingestao-incremental.md)).
 
-| Gatilho | Ingestão | Reconciliação full-vence | Publica |
+| Trigger | Ingestion | "Full wins" reconciliation | Publishes |
 | --- | --- | --- | --- |
-| Pull request | incremental sobre o `prod.duckdb` (só leitura) | sim (valida o caminho do agendamento) | não |
-| Push na `main` | incremental | não | sim |
-| Semanal (segunda-feira) | incremental | **sim**: o full é publicado | sim |
-| Manual (`workflow_dispatch`) | `modo: incremental` ou `full` | se marcar `reconciliar` | sim |
+| Pull request | incremental on top of `prod.duckdb` (read-only) | yes (exercises the scheduled path) | no |
+| Push to `main` | incremental | no | yes |
+| Weekly (Monday) | incremental | **yes**: the full load is published | yes |
+| Manual (`workflow_dispatch`) | `modo: incremental` or `full` | if `reconciliar` is checked | yes |
 
-Em cada execução, o Actions:
+On each run, Actions:
 
-1. Instala as dependências (`uv`, driver `dbc`) e roda `ruff` e `pytest`
-2. **Baixa e valida o estado** (`indicadores validar`): para servir de base incremental, o
-   `prod.duckdb` da release precisa abrir no DuckDB, ter as tabelas raw com o schema esperado e
-   nenhuma chave duplicada. Se **abrir mas for inválido** (ex.: schema de uma versão anterior), a
-   carga vira full, o banco novo herda o histórico de auditoria e o arquivo ainda é usado como
-   backup. Se estiver **corrompido**, a carga vira full e o backup existente é preservado. Se a
-   release não tiver o arquivo, cada série vira full sozinha. Se a consulta à release falhar, o
-   run para
-3. **Ingere** (`indicadores ingest`): cada série recomeça um pouco antes da última data
-   carregada (90 dias nas diárias, 2 períodos nas mensais e trimestrais) e substitui essa
-   janela, numa transação que também grava a linha de auditoria em `raw.cargas`
-4. **Reconcilia** (segundas e PRs): carga full num banco separado e comparação série a série e
-   linha a linha (`indicadores reconciliar`). Revisão da fonte é registrada e o full vence.
-   Divergência estrutural (série sumiu, data regrediu, contagem caiu mais de 1%) **falha o run**
-5. **Portão**: `dbt build` e `dbt source freshness` precisam passar
-6. **Publica** (só na `main`): sobe o `prod.duckdb` anterior como `prod.anterior.duckdb`
-   (backup) e depois o novo `prod.duckdb` na release [`warehouse`](https://github.com/Jones51/indicadores-br/releases/tag/warehouse)
-7. Gera o dbt Docs e o dashboard (`indicadores exportar`) e publica no GitHub Pages
+1. Installs deps (`uv`, `dbc` driver) and runs `ruff` and `pytest`
+2. **Downloads and validates the state** (`indicadores validar`): to serve as an incremental base,
+   the release's `prod.duckdb` must open in DuckDB, have the raw tables with the expected schema
+   and no duplicate keys. If it **opens but is invalid** (e.g. a schema from a previous code
+   version), the load becomes full, the new database inherits the audit history and the file is
+   still kept as the backup. If it is **corrupted**, the load becomes full and the existing backup
+   is preserved. If the release has no file, each series falls back to full on its own. If the
+   release lookup itself fails, the run stops
+3. **Ingests** (`indicadores ingest`): each series restarts a little before its last loaded date
+   (90 days for daily series, 2 periods for monthly and quarterly ones) and replaces that window,
+   in a transaction that also writes the audit row to `raw.cargas`
+4. **Reconciles** (Mondays and PRs): a full load into a separate database, compared series by
+   series and row by row (`indicadores reconciliar`). Source revisions are logged and the full
+   load wins. Structural divergence (a series disappeared, a date went backwards, a row count
+   dropped more than 1%) **fails the run**
+5. **Quality gate**: `dbt build` and `dbt source freshness` must pass
+6. **Publishes** (only on `main`): uploads the previous `prod.duckdb` as `prod.anterior.duckdb`
+   (backup), then the new `prod.duckdb`, to the [`warehouse`](https://github.com/Jones51/indicadores-br/releases/tag/warehouse) release
+7. Generates the dbt Docs and the dashboard (`indicadores exportar`) and deploys them to GitHub Pages
 
-Se qualquer passo antes da publicação falhar, o warehouse publicado continua o mesmo.
+If any step before publishing fails, the published warehouse stays as it was.
 
-### Acompanhar uma execução
+### Following a run
 
-O **resumo do run** (aba *Summary* da execução no Actions) mostra o estado inicial usado, uma
-tabela por série (modo, motivo, última data antes → depois, linhas recebidas, removidas e
-inseridas) e, quando há reconciliação, o relatório dela, com exemplos de linhas divergentes.
-O badge no topo deste README leva às últimas execuções.
+The **run summary** (the run's *Summary* tab in Actions) shows the initial state used, a table per
+series (mode, reason, last date before → after, rows received, deleted and inserted) and, when
+there is a reconciliation, its report with sample divergent rows. The badge at the top of this
+README links to the latest runs.
 
-O histórico fica no próprio warehouse publicado:
+The history lives in the published warehouse itself:
 
 ```sql
--- últimas execuções: modo e volume por fonte
+-- latest runs: mode and volume per source
 SELECT execucao_id, fonte, modo, motivo, count(*) AS series,
        sum(linhas_recebidas) AS recebidas, max(executado_em) AS executado_em
 FROM raw.cargas
@@ -151,44 +156,44 @@ GROUP BY ALL
 ORDER BY executado_em DESC
 LIMIT 20;
 
--- divergências encontradas pela reconciliação semanal
+-- divergences found by the weekly reconciliation
 SELECT execucao_id, serie_nome, situacao, detalhe
 FROM raw.reconciliacoes
 WHERE situacao <> 'igual'
 ORDER BY executado_em DESC;
 ```
 
-### Rollback do warehouse
+### Warehouse rollback
 
-Cada publicação guarda a versão anterior como `prod.anterior.duckdb` na mesma release:
+Every publish keeps the previous version as `prod.anterior.duckdb` on the same release:
 
-| `prod.duckdb` anterior | `validar` | Backup |
+| Previous `prod.duckdb` | `validar` exit | Backup |
 | --- | --- | --- |
-| válido | 0 | vira `prod.anterior.duckdb` |
-| abre, mas inválido como base (ex.: schema de uma versão anterior do código) | 3 | **vira** `prod.anterior.duckdb`: foi publicado depois de passar no `dbt build` |
-| corrompido (não abre no DuckDB) | 4 | não; o `prod.anterior.duckdb` existente é preservado |
+| valid | 0 | becomes `prod.anterior.duckdb` |
+| opens, but invalid as a base (e.g. schema from a previous code version) | 3 | **becomes** `prod.anterior.duckdb`: it was published after passing `dbt build` |
+| corrupted (doesn't open in DuckDB) | 4 | no; the existing `prod.anterior.duckdb` is preserved |
 
-Para voltar à versão anterior (requer `gh` autenticado com permissão de escrita no repositório):
+To roll back to the previous version (requires `gh` authenticated with write access to the repo):
 
 ```powershell
 gh release download warehouse -p prod.anterior.duckdb -O prod.duckdb --clobber
-uv run indicadores validar --db prod.duckdb      # 0 ou 3: abre; 4: corrompido, não publicar
+uv run indicadores validar --db prod.duckdb      # 0 or 3: opens; 4: corrupted, don't publish
 gh release upload warehouse prod.duckdb --clobber
 ```
 
-Restaurar um backup de schema antigo (saída 3) é seguro: o próximo run faz full, herda o
-histórico de `raw.cargas`/`raw.reconciliacoes` e guarda esse mesmo arquivo como backup.
-Com saída 0, o próximo run parte do warehouse restaurado. O dbt Docs e o dashboard do Pages continuam com a
-versão do último run até o próximo, que pode ser disparado na aba Actions (*Run workflow*). Use
-`modo: full` para reconstruir do zero.
+Restoring an old-schema backup (exit 3) is safe: the next run does a full load, inherits the
+`raw.cargas`/`raw.reconciliacoes` history and keeps that same file as the backup. With exit 0, the
+next run starts from the restored warehouse. The dbt Docs and dashboard on Pages keep the last
+run's version until the next one, which can be triggered from the Actions tab (*Run workflow*).
+Use `modo: full` to rebuild from scratch.
 
 ---
 
-## 🦆 Consultar o warehouse publicado
+## 🦆 Query the published warehouse
 
-Sem clonar nada. [Instale o DuckDB](https://duckdb.org/docs/installation/) **2.x** (o arquivo usa o
-formato de armazenamento do DuckDB 2.0) — no Windows, `winget install DuckDB.cli` — e, numa sessão
-`duckdb`:
+No clone required. [Install DuckDB](https://duckdb.org/docs/installation/) **2.x** (the file uses
+the DuckDB 2.0 storage format) — on Windows, `winget install DuckDB.cli` — then from a `duckdb`
+session:
 
 ```sql
 INSTALL httpfs;
@@ -205,37 +210,37 @@ SELECT * FROM marts.fct_indicadores_mensais ORDER BY mes_referencia DESC LIMIT 1
 
 ## 📖 Docs
 
-A documentação é gerada com `dbt docs generate` (dbt Docs v2) e publicada no GitHub Pages:
+Docs are generated with `dbt docs generate` (dbt Docs v2) and published to GitHub Pages:
 
 **→ [https://jones51.github.io/indicadores-br/](https://jones51.github.io/indicadores-br/)**
 
-O site mostra:
+The site shows:
 
-- O **grafo de linhagem** completo (source → staging → marts), inclusive **por coluna**
-- **Descrições** de modelos e colunas vindas do YAML
-- Quais colunas têm **testes**
+- The full **lineage graph** (sources → staging → marts), including **column-level** lineage
+- **Model and column descriptions** from the YAML
+- Which columns carry **tests**
 
-O **dashboard** (KPIs e gráficos de Selic, IPCA, juro real e dólar) é publicado no mesmo site,
-a partir de um JSON exportado do mart pela CI ([ADR 0005](docs/adr/0005-dashboard-estatico-pages.md)):
+The **dashboard** (KPIs and charts for Selic, IPCA, real interest rate and USD/BRL) is published on
+the same site, from a JSON exported from the mart by the CI ([ADR 0005](docs/adr/0005-dashboard-estatico-pages.md)):
 
 **→ [https://jones51.github.io/indicadores-br/dashboard/](https://jones51.github.io/indicadores-br/dashboard/)**
 
 ---
 
-## 💻 Rodar localmente
+## 💻 Run it yourself
 
-Requer [uv](https://docs.astral.sh/uv/). No PowerShell:
+Requires [uv](https://docs.astral.sh/uv/). In PowerShell:
 
 ```powershell
-uv sync                                   # cria .venv e instala dependências
-uvx dbc sync --level user                 # driver DuckDB 2.x usado pelo dbt v2 (uma vez por máquina)
-uv run indicadores ingest                 # incremental: só a janela recente de cada série (banco vazio = full)
-uv run indicadores ingest --full          # recarga completa desde 2010
+uv sync                                   # create .venv and install dependencies
+uvx dbc sync --level user                 # DuckDB 2.x driver used by dbt v2 (once per machine)
+uv run indicadores ingest                 # incremental: only each series' recent window (empty db = full)
+uv run indicadores ingest --full          # full reload since 2010
 cd transform
-uv run dbt build --profiles-dir .         # modelos + testes (target dev)
+uv run dbt build --profiles-dir .         # models + tests (dev target)
 ```
 
-Docs localmente:
+Optional docs locally:
 
 ```powershell
 cd transform
@@ -244,23 +249,23 @@ uv run dbt docs generate --profiles-dir . --no-compile
 uv run dbt docs serve --profiles-dir . --port 8080
 ```
 
-Dashboard localmente (abra http://localhost:8000):
+Dashboard locally (open http://localhost:8000):
 
 ```powershell
-uv run indicadores exportar                    # grava dashboard/dados.json a partir do mart
+uv run indicadores exportar                    # writes dashboard/dados.json from the mart
 uv run python -m http.server -d dashboard 8000
 ```
 
-Validação de estado e reconciliação, com os mesmos comandos da CI:
+State validation and reconciliation, with the same commands the CI uses:
 
 ```powershell
-uv run indicadores validar --db data/warehouse.duckdb    # 0 válido, 3 abre mas inválido, 4 corrompido
+uv run indicadores validar --db data/warehouse.duckdb    # 0 valid, 3 opens but invalid, 4 corrupted
 $env:DUCKDB_PATH = "data/full.duckdb"; uv run indicadores ingest --full; Remove-Item Env:DUCKDB_PATH
-uv run indicadores reconciliar --base data/warehouse.duckdb --full data/full.duckdb   # 2 = estrutural
-uv run indicadores resumo                                # tabela da última execução em raw.cargas
+uv run indicadores reconciliar --base data/warehouse.duckdb --full data/full.duckdb   # 2 = structural
+uv run indicadores resumo                                # table of the latest run in raw.cargas
 ```
 
-Explorar o warehouse local na UI do DuckDB (somente leitura):
+Explore the local warehouse in the DuckDB UI (read-only):
 
 ```powershell
 duckdb -ui -cmd "ATTACH 'data/warehouse.duckdb' AS warehouse (READ_ONLY); USE warehouse;"
@@ -268,108 +273,118 @@ duckdb -ui -cmd "ATTACH 'data/warehouse.duckdb' AS warehouse (READ_ONLY); USE wa
 
 ---
 
-## 📊 Séries
+## 📊 Series
 
-| Nome | Código SGS | Unidade | Periodicidade |
+Central Bank (BCB SGS):
+
+| Name | SGS code | Unit | Frequency |
 | --- | --- | --- | --- |
-| `selic_meta` | 432 | % a.a. | diária |
-| `ipca_mensal` | 433 | % a.m. | mensal |
-| `ipca_12m` | 13522 | % 12 meses | mensal |
-| `dolar_ptax_venda` | 1 | R$/US$ | diária |
+| `selic_meta` | 432 | % p.a. | daily |
+| `ipca_mensal` | 433 | % per month | monthly |
+| `ipca_12m` | 13522 | % 12 months | monthly |
+| `dolar_ptax_venda` | 1 | BRL per USD | daily |
 
-IBGE (SIDRA), nível Brasil. Datas = primeiro dia do último mês do período
+IBGE (SIDRA), Brazil level. Dates = first day of the period's last month
 ([ADR 0004](docs/adr/0004-extrator-ibge-sidra.md)):
 
-| Nome | Tabela / variável | Unidade | Periodicidade |
+| Name | Table / variable | Unit | Frequency |
 | --- | --- | --- | --- |
-| `desocupacao` | 4099 / 4099 | % | trimestral |
-| `desocupacao_movel` | 6381 / 4099 | % | trimestre móvel (mensal) |
-| `pib_indice_sa` | 1621 / 584 (PIB a preços de mercado) | índice dessaz. (1995=100) | trimestral |
-| `pib_var_interanual` | 5932 / 6561 (PIB a preços de mercado) | % s/ mesmo tri do ano anterior | trimestral |
+| `desocupacao` | 4099 / 4099 | % | quarterly |
+| `desocupacao_movel` | 6381 / 4099 | % | rolling quarter (monthly) |
+| `pib_indice_sa` | 1621 / 584 (GDP at market prices) | seasonally adjusted index (1995=100) | quarterly |
+| `pib_var_interanual` | 5932 / 6561 (GDP at market prices) | % vs. same quarter of the previous year | quarterly |
 
-Nova série = nova entrada em `SERIES_BCB` ou `SERIES_IBGE` ([`config.py`](src/indicadores/config.py)).
-`uv run indicadores ingest --fonte ibge` ingere só uma fonte.
+A new series = a new entry in `SERIES_BCB` or `SERIES_IBGE` ([`config.py`](src/indicadores/config.py)).
+`uv run indicadores ingest --fonte ibge` ingests a single source.
 
 ---
 
-## 📁 Estrutura
+## 📁 Project layout
 
 ```text
 .
-├── .github/workflows/dbt_build.yml   # CI pública: lint, testes, build, publicação
-├── ci/profiles.yml                   # target prod do DuckDB para o Actions
-├── dashboard/index.html              # dashboard estático (lê dados.json exportado do mart)
-├── data/                             # warehouses locais (gitignored; a CI regenera)
-├── docs/adr/                         # decisões de arquitetura (ADRs)
+├── .github/workflows/dbt_build.yml   # public CI: lint, tests, build, publish
+├── ci/profiles.yml                   # prod DuckDB target for Actions
+├── dashboard/index.html              # static dashboard (reads dados.json exported from the mart)
+├── data/                             # local warehouses (gitignored; CI regenerates)
+├── docs/adr/                         # architecture decision records (ADRs)
 ├── src/indicadores/
-│   ├── config.py                     # caminhos e catálogo de séries
-│   ├── extract/                      # um módulo por fonte (bcb, ibge)
-│   ├── incremental.py                # janela incremental (funções puras)
-│   ├── ingestao.py                   # orquestra janela -> extração -> carga + auditoria
-│   ├── load.py                       # carga na raw (substituição por intervalo) e raw.cargas
-│   ├── estado.py                     # validação do warehouse herdado (`indicadores validar`)
-│   ├── reconciliar.py                # reconciliação incremental x full
+│   ├── config.py                     # paths and series catalog
+│   ├── extract/                      # one module per source (bcb, ibge)
+│   ├── incremental.py                # incremental window (pure functions)
+│   ├── ingestao.py                   # orchestrates window -> extract -> load + audit
+│   ├── load.py                       # raw load (range replacement) and raw.cargas
+│   ├── estado.py                     # inherited warehouse validation (`indicadores validar`)
+│   ├── reconciliar.py                # incremental x full reconciliation
 │   └── cli.py                        # `indicadores ingest | validar | reconciliar | resumo | exportar`
-├── tests/                            # testes unitários (sem rede)
-├── transform/                        # projeto dbt
+├── tests/                            # unit tests (no network)
+├── transform/                        # dbt project
 │   ├── dbt_project.yml
 │   ├── models/
 │   │   ├── staging/                  # _sources.yml, stg_bcb__sgs, stg_ibge__sidra (views)
-│   │   └── marts/                    # fct_indicadores_mensais + testes (tables)
+│   │   └── marts/                    # fct_indicadores_mensais + tests (tables)
 │   ├── macros/                       # generate_schema_name
-│   └── tests/                        # testes singulares
-└── dbc.toml                          # driver ADBC do DuckDB fixado para o dbt v2
+│   └── tests/                        # singular tests
+└── dbc.toml                          # pinned DuckDB ADBC driver for dbt v2
 ```
 
 ---
 
-## 🤖 Desenvolvimento com agentes em paralelo
+## 🤖 Parallel agent development
 
-Este projeto também é um estudo de **desenvolvimento agêntico**: várias funcionalidades foram
-construídas por subagentes do Claude Code trabalhando **ao mesmo tempo**, cada um na sua
-[git worktree](https://git-scm.com/docs/git-worktree) e branch, com um agente orquestrador
-planejando, revisando e integrando. O processo completo está em [`CLAUDE.md`](CLAUDE.md#desenvolvimento-com-agentes-em-paralelo).
+This project is also a study in **agentic development**: several features were built by Claude
+Code subagents working **at the same time**, each in its own
+[git worktree](https://git-scm.com/docs/git-worktree) and branch, with an orchestrator agent
+planning, reviewing and integrating. The full process is in [`CLAUDE.md`](CLAUDE.md#desenvolvimento-com-agentes-em-paralelo) (in Portuguese).
 
 ```mermaid
 flowchart LR
-    orq["Orquestrador<br/>(sessão principal)"] -->|briefing + worktree| A["Agente A<br/>timestamp + mart"]
-    orq --> B["Agente B<br/>extrator IBGE"]
-    orq --> C["Agente C<br/>dashboard"]
-    A -->|PR #2| rev{"revisão<br/>+ CI"}
+    orq["Orchestrator<br/>(main session)"] -->|briefing + worktree| A["Agent A<br/>timestamp + mart"]
+    orq --> B["Agent B<br/>IBGE extractor"]
+    orq --> C["Agent C<br/>dashboard"]
+    A -->|PR #2| rev{"review<br/>+ CI"}
     B -->|PR #3| rev
     C -->|PR #4| rev
-    rev -->|merge um a um| main(("main"))
+    rev -->|merge one by one| main(("main"))
 ```
 
-| Etapa | Como foi feito |
+| Stage | How it was done |
 | --- | --- |
-| **Planejamento** | tarefas divididas por área de código, com mapa de conflitos e números de ADR reservados |
-| **Isolamento** | uma worktree por agente, irmã do repositório (`..\indicadores-br.worktrees\<branch>`), com `.venv` e warehouse próprios |
-| **Dados** | cada worktree semeada com o snapshot de produção (`prod.duckdb` da release), como um *clone* de prod |
-| **Entrega** | cada agente valida (pytest, ruff, `dbt build`), abre o PR e espera o CI — sem merge |
-| **Integração** | simulação com `git merge-tree`, merge um PR por vez, `git merge origin/main` na branch seguinte |
+| **Planning** | tasks split by code area, with a conflict map and reserved ADR numbers |
+| **Isolation** | one worktree per agent, next to the repo (`..\indicadores-br.worktrees\<branch>`), with its own `.venv` and warehouse |
+| **Data** | each worktree seeded with the production snapshot (`prod.duckdb` from the release), like a prod *clone* |
+| **Delivery** | each agent validates (pytest, ruff, `dbt build`), opens the PR and waits for CI — no merging |
+| **Integration** | dry run with `git merge-tree`, merge one PR at a time, `git merge origin/main` into the next branch |
+| **Review loop** | review findings go back to the **same** agent (it keeps its context), as new commits — no history rewrite after review |
 
-**1ª onda** — 3 agentes em paralelo, 3 PRs, 1 conflito textual e 1 semântico:
+**Wave 1** — 3 agents in parallel, 3 PRs, 1 textual and 1 semantic conflict:
 
-| PR | Agente | Entrega | Integração |
+| PR | Agent | Delivery | Integration |
 | --- | --- | --- | --- |
-| [#2](https://github.com/Jones51/indicadores-br/pull/2) | A | `extraido_em` com fuso, mês corrente no mart, testes da carga | merge limpo |
-| [#3](https://github.com/Jones51/indicadores-br/pull/3) | B | extrator IBGE (SIDRA) até staging ([ADR 0004](docs/adr/0004-extrator-ibge-sidra.md)) | conflito textual em `load.py` + conflito **semântico** (tabela nova com o bug que o #2 corrigiu) |
-| [#4](https://github.com/Jones51/indicadores-br/pull/4) | C | dashboard + export JSON ([ADR 0005](docs/adr/0005-dashboard-estatico-pages.md)) | sem conflito; revalidado sobre a `main` nova (mês corrente com IPCA nulo) |
+| [#2](https://github.com/Jones51/indicadores-br/pull/2) | A | timezone-aware `extraido_em`, current month in the mart, load tests | clean merge |
+| [#3](https://github.com/Jones51/indicadores-br/pull/3) | B | IBGE (SIDRA) extractor up to staging ([ADR 0004](docs/adr/0004-extrator-ibge-sidra.md)) | textual conflict in `load.py` + **semantic** conflict (a new table carrying the bug #2 had fixed) |
+| [#4](https://github.com/Jones51/indicadores-br/pull/4) | C | dashboard + JSON export ([ADR 0005](docs/adr/0005-dashboard-estatico-pages.md)) | no conflict; revalidated on top of the new `main` (current month with null IPCA) |
 
-O que ficou de lição: o git só acusa conflitos **textuais**. O do PR #3 passou limpo pelo git e
-pelo CI e só apareceu na revisão — e virou um teste que garante o padrão daqui em diante.
+**Wave 2** — 1 agent, 1 PR, 1 review round:
+
+| PR | Delivery | Review |
+| --- | --- | --- |
+| [#6](https://github.com/Jones51/indicadores-br/pull/6) | incremental ingestion, audit log, weekly reconciliation, backup/rollback ([ADR 0006](docs/adr/0006-ingestao-incremental.md)) | the review found that a schema change would skip the backup and drop the audit history; sent back to the same agent and fixed in 5 new commits |
+
+The lesson: git only flags **textual** conflicts. The one in PR #3 passed cleanly through git and
+CI and only showed up in review — and it became a test that enforces the pattern from then on.
 
 ---
 
 ## 🗺️ Roadmap
 
-- [x] Esqueleto: ingestão BCB, staging, mart mensal, testes
-- [x] Migração para dbt v2 ([ADR 0002](docs/adr/0002-migracao-dbt-v2.md))
-- [x] CI pública + warehouse na release + docs no GitHub Pages
-- [x] Extrator IBGE (desemprego PNAD, PIB) até staging ([ADR 0004](docs/adr/0004-extrator-ibge-sidra.md))
-- [ ] IBGE no mart mensal
-- [x] Ingestão incremental com reconciliação semanal, backup e auditoria ([ADR 0006](docs/adr/0006-ingestao-incremental.md))
-- [ ] Análise: correlação Selic × IPCA com defasagem
-- [x] Dashboard HTML interativo ([ADR 0005](docs/adr/0005-dashboard-estatico-pages.md))
-- [x] Processo de desenvolvimento com agentes em paralelo documentado
+- [x] Skeleton: BCB ingestion, staging, monthly mart, tests
+- [x] Migration to dbt v2 ([ADR 0002](docs/adr/0002-migracao-dbt-v2.md))
+- [x] Public CI + warehouse on the release + docs on GitHub Pages
+- [x] IBGE extractor (PNAD unemployment, GDP) up to staging ([ADR 0004](docs/adr/0004-extrator-ibge-sidra.md))
+- [ ] IBGE in the monthly mart
+- [x] Incremental ingestion with weekly reconciliation, backup and audit log ([ADR 0006](docs/adr/0006-ingestao-incremental.md))
+- [ ] Analysis: Selic × IPCA cross-correlation with lags
+- [x] Interactive HTML dashboard ([ADR 0005](docs/adr/0005-dashboard-estatico-pages.md))
+- [x] Parallel agent development process documented
+- [x] Protected `main` branch (PR + green CI required)

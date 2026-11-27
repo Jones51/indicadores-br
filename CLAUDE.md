@@ -64,6 +64,9 @@ uv run dbt docs generate --profiles-dir . --no-compile ; uv run dbt docs serve -
 ## Convenções
 
 - Nomes de domínio em **português** (colunas, modelos, funções); termos técnicos podem ficar em inglês.
+- Idioma por artefato: **inglês** no `README.md`, nos textos do dashboard, nas notas da release e
+  na descrição do repositório (padrão do portfólio, como o `dbt-duckdb-pipeline`); **português**
+  nos identificadores, comentários, docstrings, YAML do dbt, ADRs, `CLAUDE.md`, commits e PRs.
 - SQL: minúsculas, CTEs nomeadas, uma CTE por fonte/etapa, `select *` só na CTE de fonte.
 - Toda coluna nova de mart ganha `description` no YAML; chaves ganham `unique` + `not_null`.
 - Funções de parsing têm teste unitário em `tests/` (sem rede — mockar HTTP).
@@ -92,6 +95,9 @@ uv run dbt docs generate --profiles-dir . --no-compile ; uv run dbt docs serve -
 - A página de ajuda do SIDRA fica atrás de desafio JS (Cloudflare); para metadados use
   `servicodados.ibge.gov.br/api/v3/agregados/{tabela}/metadados`.
 - DuckDB aceita um só escritor: não rodar ingestão e dbt em paralelo.
+- Depois de um `git pull` que traga tabelas raw novas, rode `uv run indicadores ingest` antes do
+  `dbt build`: é o `conectar()` que cria as tabelas (senão os testes de source falham com
+  "Table ... does not exist").
 - Versão do `duckdb` (Python) e do driver em `dbc.toml` andam juntas: mesma linha major.
 
 ## Fluxo de trabalho

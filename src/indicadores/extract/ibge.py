@@ -1,6 +1,11 @@
 """Extrator da API SIDRA do IBGE.
 
-Endpoint: https://apisidra.ibge.gov.br/values/t/{tabela}/n1/all/v/{variavel}/p/all[/c{cl}/{cat}]/d/m
+Endpoint: https://apisidra.ibge.gov.br/values/t/{tabela}/n1/all/v/{variavel}/p/{periodos}[/c{cl}/{cat}]/d/m
+
+`{periodos}` é `all` na carga full e uma faixa `AAAAPP-AAAAPP` (ex.: `202601-202604`) na
+incremental. Verificado na API real: a faixa pode terminar num período ainda não divulgado (vem
+só o que existe), uma faixa sem nenhum período divulgado devolve só o cabeçalho, e uma faixa
+invertida é HTTP 400.
 
 A resposta é uma lista JSON em que o **primeiro elemento é o cabeçalho** (rótulos das colunas
 `NC`, `MN`, `V`, `D1C`, ...) e os demais são as observações. A ordem das dimensões `D1..Dn`
@@ -45,9 +50,9 @@ class RegistroSIDRA(NamedTuple):
     unidade: str
 
 
-def montar_url(serie: SerieSIDRA) -> str:
-    """Monta a URL da consulta: Brasil (n1), todos os períodos, máximo de casas decimais."""
-    partes = [BASE_URL, f"t/{serie.tabela}", "n1/all", f"v/{serie.variavel}", "p/all"]
+def montar_url(serie: SerieSIDRA, periodos: str = "all") -> str:
+    """Monta a URL da consulta: Brasil (n1), períodos pedidos, máximo de casas decimais."""
+    partes = [BASE_URL, f"t/{serie.tabela}", "n1/all", f"v/{serie.variavel}", f"p/{periodos}"]
     partes += [f"c{cl}/{cat}" for cl, cat in serie.classificacoes]
     partes.append("d/m")
     return "/".join(partes)
@@ -67,6 +72,27 @@ def periodo_para_data(codigo: str, periodicidade: str) -> date:
             raise ValueError(f"Mês inválido em {codigo!r}")
         return date(ano, sufixo, 1)
     raise ValueError(f"Periodicidade desconhecida: {periodicidade!r}")
+
+
+def data_para_periodo(d: date, periodicidade: str) -> str:
+    """Código do período SIDRA que contém `d` (inverso de `periodo_para_data` para datas de mês).
+
+    Trimestral: trimestre civil do mês (`2026-02-xx` -> `202601`); mensal e trimestre móvel:
+    `AAAAMM`. Para qualquer `d`, `periodo_para_data(data_para_periodo(d)) >= d` no mês, então
+    uma faixa iniciada nesse código cobre todos os períodos com `data >= d`.
+    """
+    if periodicidade == "trimestral":
+        return f"{d.year:04d}{(d.month - 1) // 3 + 1:02d}"
+    if periodicidade in ("trimestral_movel", "mensal"):
+        return f"{d.year:04d}{d.month:02d}"
+    raise ValueError(f"Periodicidade desconhecida: {periodicidade!r}")
+
+
+def faixa_periodos(inicio: date, fim: date, periodicidade: str) -> str:
+    """Faixa `AAAAPP-AAAAPP` do SIDRA cobrindo os períodos de `inicio` até `fim`."""
+    if fim < inicio:
+        raise ValueError(f"Faixa invertida: {inicio} > {fim}")
+    return f"{data_para_periodo(inicio, periodicidade)}-{data_para_periodo(fim, periodicidade)}"
 
 
 def parse_valor(bruto: str | None) -> float | None:
@@ -116,12 +142,19 @@ def extrair_serie(
     serie: SerieSIDRA,
     inicio: date,
     client: httpx.Client | None = None,
+    *,
+    ate: date | None = None,
 ) -> list[RegistroSIDRA]:
-    """Baixa a série inteira (volume pequeno) e mantém os períodos com data >= `inicio`."""
+    """Baixa a série e mantém os períodos com data >= `inicio`.
+
+    Sem `ate` (carga full), pede todos os períodos (`p/all`, volume pequeno). Com `ate` (carga
+    incremental), pede só a faixa de períodos de `inicio` até `ate`.
+    """
+    periodos = "all" if ate is None else faixa_periodos(inicio, ate, serie.periodicidade)
     proprio_client = client is None
     client = client or httpx.Client(timeout=60.0)
     try:
-        resp = client.get(montar_url(serie))
+        resp = client.get(montar_url(serie, periodos))
         if resp.status_code == 400:  # o SIDRA explica o erro em texto puro
             raise ValueError(f"SIDRA recusou a consulta de {serie.nome}: {resp.text.strip()}")
         resp.raise_for_status()

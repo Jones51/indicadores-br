@@ -39,7 +39,7 @@ jobs:
       - name: Instalar driver DuckDB do dbt (dbc)
         run: uvx dbc sync --level user
 
-      - name: Ingerir séries do BCB
+      - name: Ingerir séries do BCB e do IBGE
         run: uv run indicadores ingest
 
       - name: dbt build (prod)

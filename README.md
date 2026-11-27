@@ -66,9 +66,9 @@ Colunas do mart:
 | --- | --- |
 | `mes_referencia` | primeiro dia do mês (chave) |
 | `selic_meta_aa` | meta Selic vigente no último dia do mês (% a.a.) |
-| `ipca_mensal` | variação mensal do IPCA (%) |
-| `ipca_12m` | IPCA acumulado em 12 meses (%) |
-| `juro_real_ex_post_aa` | Selic meta descontada do IPCA 12m pela equação de Fisher (% a.a.) |
+| `ipca_mensal` | variação mensal do IPCA (%); nulo no mês corrente até a divulgação |
+| `ipca_12m` | IPCA acumulado em 12 meses (%); nulo no mês corrente até a divulgação |
+| `juro_real_ex_post_aa` | Selic meta descontada do IPCA 12m pela equação de Fisher (% a.a.); nulo se faltar insumo |
 | `dolar_ptax_medio` | média mensal da PTAX venda (R$/US$) |
 | `dolar_ptax_fim_mes` | PTAX venda do último dia útil do mês (R$/US$) |
 

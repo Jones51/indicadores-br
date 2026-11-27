@@ -1,4 +1,4 @@
-"""CLI do pipeline: `uv run indicadores ingest | validar | resumo | exportar`."""
+"""CLI do pipeline: `uv run indicadores ingest | validar | reconciliar | resumo | exportar`."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import argparse
 import os
 import sys
 from datetime import date
+from pathlib import Path
 
 from indicadores.config import DUCKDB_PATH, SERIES_BCB, SERIES_IBGE
 from indicadores.incremental import MOTIVOS_FULL
@@ -61,6 +62,18 @@ def cmd_validar(args: argparse.Namespace) -> None:
             print(f"[inválido] {problema}")
         raise SystemExit(1)
     print(f"[ok] estado válido: {args.db}")
+
+
+def cmd_reconciliar(args: argparse.Namespace) -> None:
+    from indicadores.reconciliar import reconciliar
+
+    catalogo = [s.nome for s in (*SERIES_BCB, *SERIES_IBGE)]
+    comparacoes, relatorio = reconciliar(args.base, args.full, catalogo, args.execucao_id)
+    print(relatorio)
+    if args.relatorio:
+        Path(args.relatorio).write_text(relatorio, encoding="utf-8")
+    if any(c.situacao == "estrutural" for c in comparacoes):
+        raise SystemExit(2)
 
 
 def cmd_resumo(args: argparse.Namespace) -> None:
@@ -119,6 +132,16 @@ def main() -> None:
     )
     p_validar.add_argument("--db", default=db_padrao, help="Warehouse a validar")
     p_validar.set_defaults(func=cmd_validar)
+
+    p_rec = sub.add_parser(
+        "reconciliar",
+        help="Compara incremental x full e grava a auditoria no full (sai com 2 se estrutural)",
+    )
+    p_rec.add_argument("--base", required=True, help="Warehouse incremental (só leitura)")
+    p_rec.add_argument("--full", required=True, help="Warehouse da carga full (recebe auditoria)")
+    p_rec.add_argument("--relatorio", help="Grava o relatório markdown neste arquivo")
+    p_rec.add_argument("--execucao-id", help="Id da execução (padrão: a última carga do full)")
+    p_rec.set_defaults(func=cmd_reconciliar)
 
     p_resumo = sub.add_parser("resumo", help="Tabela markdown das cargas de uma execução")
     p_resumo.add_argument("--db", default=db_padrao, help="Warehouse a consultar")

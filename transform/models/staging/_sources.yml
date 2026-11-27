@@ -17,3 +17,20 @@ sources:
             data_tests: [not_null]
           - name: valor
             data_tests: [not_null]
+      - name: ibge_sidra
+        description: >
+          Séries do SIDRA/IBGE em formato longo (uma linha por série e período), carregadas por
+          `indicadores ingest`. `data` é o primeiro dia do último mês do período (ADR 0004).
+        config:
+          loaded_at_field: extraido_em
+          freshness:
+            warn_after: {count: 8, period: day}
+        columns:
+          - name: serie_nome
+            data_tests: [not_null]
+          - name: periodo_codigo
+            data_tests: [not_null]
+          - name: data
+            data_tests: [not_null]
+          - name: valor
+            data_tests: [not_null]

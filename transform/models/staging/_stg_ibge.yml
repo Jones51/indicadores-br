@@ -1,0 +1,34 @@
+version: 2
+
+models:
+  - name: stg_ibge__sidra
+    description: >
+      Séries do IBGE (SIDRA) tipadas, uma linha por série e período. Trimestres civis e
+      trimestres móveis são datados pelo primeiro dia do último mês do período (ADR 0004).
+    columns:
+      - name: serie_nome
+        description: Nome da série no catálogo `SERIES_IBGE`.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [desocupacao, desocupacao_movel, pib_indice_sa, pib_var_interanual]
+      - name: tabela_codigo
+        description: Código da tabela SIDRA.
+        data_tests: [not_null]
+      - name: variavel_codigo
+        description: Código da variável SIDRA.
+        data_tests: [not_null]
+      - name: periodo_codigo
+        description: Código do período como o SIDRA entrega (`AAAATT` ou `AAAAMM`).
+        data_tests: [not_null]
+      - name: periodo_nome
+        description: Rótulo do período no SIDRA (ex. `1º trimestre 2026`, `ago-set-out 2026`).
+      - name: data_referencia
+        description: Primeiro dia do último mês do período.
+        data_tests: [not_null]
+      - name: valor
+        description: Valor na unidade da fonte (percentuais em escala 0–100).
+        data_tests: [not_null]
+      - name: unidade
+        description: Unidade de medida informada pelo SIDRA.

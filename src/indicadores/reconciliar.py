@@ -270,7 +270,8 @@ def reconciliar(
         raise FileNotFoundError(f"warehouse não encontrado: {base if not base.exists() else full}")
     con = conectar(full)
     try:
-        con.execute(f"attach '{base.as_posix()}' as {ALIAS_BASE} (read_only)")
+        caminho = base.as_posix().replace("'", "''")  # literal SQL: aspas escapadas
+        con.execute(f"attach '{caminho}' as {ALIAS_BASE} (read_only)")
         if execucao_id is None:
             linha = con.execute(
                 "select execucao_id from raw.cargas order by executado_em desc limit 1"

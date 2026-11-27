@@ -3,10 +3,20 @@ name: dbt build & publish
 on:
   push:
     branches: [main]
-  pull_request:             # valida PRs (build + testes), sem publicar nada
+  pull_request:             # valida PRs (build + testes + reconciliação), sem publicar nada
   schedule:
-    - cron: "17 9 * * 1"    # segundas, 06:17 BRT: dados do BCB atualizados toda semana
+    - cron: "17 9 * * 1"    # segundas, 06:17 BRT: incremental + reconciliação full-vence
   workflow_dispatch:        # botão "Run workflow" na aba Actions
+    inputs:
+      modo:
+        description: "Modo da ingestão"
+        type: choice
+        options: [incremental, full]
+        default: incremental
+      reconciliar:
+        description: "Também reconciliar com uma carga full (como no agendamento)"
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -19,10 +29,14 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write       # atualizar o asset da release `warehouse`
+      contents: write       # atualizar os assets da release `warehouse`
     env:
       DUCKDB_PATH: ${{ github.workspace }}/data/prod.duckdb
       PUBLICAR: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+      # Fora do workflow_dispatch `inputs` é vazio: cai no incremental (ADR 0006).
+      MODO: ${{ inputs.modo || 'incremental' }}
+      # Agendamento sempre reconcilia; PR também (só valida, não publica); manual, se pedido.
+      RECONCILIAR: ${{ github.event_name == 'schedule' || github.event_name == 'pull_request' || inputs.reconciliar == true }}
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.4.0
@@ -39,12 +53,107 @@ jobs:
       - name: Instalar driver DuckDB do dbt (dbc)
         run: uvx dbc sync --level user
 
-      - name: Ingerir séries do BCB e do IBGE
-        run: uv run indicadores ingest
+      # O estado da CI é o prod.duckdb publicado (somente leitura aqui, inclusive em PRs).
+      # Três casos (indicadores validar): válido -> base do incremental; abre mas é inválido
+      # (schema antigo, tabela ausente, duplicatas) -> full, mas ainda serve de backup e a
+      # auditoria é herdada; corrompido -> full sem backup. Release sem asset -> full por série.
+      - name: Estado inicial (prod.duckdb da release)
+        id: estado
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p data
+          if ! ativos=$(gh release view warehouse --json assets --jq '.assets[].name' 2>&1); then
+            if echo "$ativos" | grep -qi 'not found'; then
+              ativos=""
+            else
+              echo "::error title=Estado inicial::falha ao consultar a release: $ativos"
+              exit 1    # erro de rede/permissão não pode virar full silencioso
+            fi
+          fi
+          abre=false
+          valido=false
+          if echo "$ativos" | grep -qx 'prod.duckdb'; then
+            gh release download warehouse --pattern prod.duckdb --output data/estado.duckdb --clobber
+            rc=0
+            uv run indicadores validar --db data/estado.duckdb > data/validacao.txt || rc=$?
+            problemas=$(tr '\n' ' ' < data/validacao.txt)
+            case "$rc" in
+              0) abre=true; valido=true
+                 cp data/estado.duckdb "$DUCKDB_PATH"
+                 motivo="prod.duckdb da release válido: base do incremental" ;;
+              3) abre=true
+                 motivo="prod.duckdb da release abre, mas é inválido como base (carga full; backup e auditoria preservados): $problemas" ;;
+              4) motivo="prod.duckdb da release corrompido (carga full, sem backup): $problemas" ;;
+              *) echo "::error title=Estado inicial::validar falhou de forma inesperada (código $rc): $problemas"
+                 exit 1 ;;
+            esac
+          else
+            motivo="release sem prod.duckdb: banco novo, todas as séries em full"
+          fi
+          descartado=false
+          if [ -f data/estado.duckdb ] && [ "$valido" != true ]; then descartado=true; fi
+          {
+            echo "abre=$abre"
+            echo "valido=$valido"
+            echo "descartado=$descartado"
+          } >> "$GITHUB_OUTPUT"
+          echo "::notice title=Estado inicial::$motivo"
+          printf '### Estado inicial\n\n%s\n\nabre: `%s` · válido: `%s` · modo pedido: `%s` · reconciliação: `%s`\n\n' \
+            "$motivo" "$abre" "$valido" "$MODO" "$RECONCILIAR" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Ingerir séries do BCB e do IBGE
+        id: ingest
+        run: |
+          # Estado descartado que ainda abre: o banco novo herda o histórico de auditoria
+          # (colunas em comum; nunca falha o run por isso).
+          if [ "${{ steps.estado.outputs.descartado }}" = true ] && [ "${{ steps.estado.outputs.abre }}" = true ]; then
+            uv run indicadores herdar-auditoria --origem data/estado.duckdb > data/heranca.txt 2>&1 \
+              || echo "::warning title=Auditoria::não foi possível herdar o histórico de auditoria"
+            cat data/heranca.txt
+            { echo "#### Auditoria herdada do estado descartado"; echo; sed 's/^/- /' data/heranca.txt; echo; } \
+              >> "$GITHUB_STEP_SUMMARY" || true
+          fi
+          if [ "$MODO" = full ]; then
+            uv run indicadores ingest --full --motivo forcado
+          elif [ "${{ steps.estado.outputs.descartado }}" = true ]; then
+            uv run indicadores ingest --full --motivo estado_invalido
+          else
+            uv run indicadores ingest
+          fi
+
+      - name: Resumo da ingestão
+        if: always() && steps.ingest.outcome != 'skipped'
+        run: |
+          if [ -f "$DUCKDB_PATH" ]; then
+            uv run indicadores resumo >> "$GITHUB_STEP_SUMMARY" || true
+          fi
+
+      # Full vence: a carga full do zero é comparada com o incremental e segue para o build.
+      # Revisão da fonte é registrada e não falha; divergência estrutural falha antes de publicar.
+      - name: Reconciliação full-vence
+        if: env.RECONCILIAR == 'true' && env.MODO != 'full'
+        run: |
+          DUCKDB_PATH="$PWD/data/full.duckdb" uv run indicadores ingest --full --motivo reconciliacao
+          status=0
+          uv run indicadores reconciliar --base "$DUCKDB_PATH" --full data/full.duckdb \
+            --relatorio data/reconciliacao.md || status=$?
+          cat data/reconciliacao.md >> "$GITHUB_STEP_SUMMARY" || true
+          if [ "$status" -ne 0 ]; then
+            echo "::error title=Reconciliação::divergência estrutural (ou erro): nada será publicado"
+            exit "$status"
+          fi
+          mv data/full.duckdb "$DUCKDB_PATH"
+          echo "::notice title=Reconciliação::full vence: a carga full segue para o build"
+
+      # Portão: build, testes e freshness precisam passar antes de qualquer publicação.
       - name: dbt build (prod)
         working-directory: transform
         run: uv run dbt build --profiles-dir ../ci
+
+      - name: dbt source freshness
+        working-directory: transform
+        run: uv run dbt source freshness --profiles-dir ../ci
 
       - name: dbt docs (com linhagem por coluna)
         working-directory: transform
@@ -60,15 +169,26 @@ jobs:
           uv run indicadores exportar --saida site/dashboard/dados.json
           ls -l site/dashboard
 
-      - name: Publicar warehouse na release
+      # Backup antes de sobrescrever: rollback = publicar prod.anterior.duckdb como prod.duckdb.
+      - name: Publicar warehouse na release (com backup do anterior)
         if: env.PUBLICAR == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          ESTADO_ABRE: ${{ steps.estado.outputs.abre }}
         run: |
           gh release view warehouse >/dev/null 2>&1 || \
             gh release create warehouse --title "warehouse" --latest=false \
-              --notes "Warehouse DuckDB reconstruído automaticamente pelo GitHub Actions a cada push na main e toda segunda-feira."
-          gh release upload warehouse data/prod.duckdb --clobber
+              --notes "Warehouse DuckDB atualizado pelo GitHub Actions (incremental a cada push na main; reconciliado com uma carga full toda segunda-feira). prod.anterior.duckdb é a versão anterior (rollback)."
+          # Backup depende só de o arquivo abrir: um schema antigo foi publicado depois de passar
+          # no dbt build e é justamente a versão que se quer para rollback. Corrompido ou
+          # ausente não sobrescreve o prod.anterior.duckdb que já existe.
+          if [ "$ESTADO_ABRE" = true ]; then
+            cp data/estado.duckdb data/prod.anterior.duckdb
+            gh release upload warehouse data/prod.anterior.duckdb --clobber
+          else
+            echo "::warning title=Backup::estado inicial ausente ou corrompido: prod.anterior.duckdb mantido como estava"
+          fi
+          gh release upload warehouse "$DUCKDB_PATH" --clobber
 
       - name: Empacotar site de docs para o Pages
         if: env.PUBLICAR == 'true'

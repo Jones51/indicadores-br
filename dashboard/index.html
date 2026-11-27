@@ -193,7 +193,7 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
   </details>
 
   <footer>
-    <span>Fonte: <a href="https://www3.bcb.gov.br/sgspub" rel="noopener">Banco Central do Brasil — SGS</a> · <span id="gerado-em">gerado em —</span></span>
+    <span>Fonte: <a href="https://www3.bcb.gov.br/sgspub" rel="noopener">Banco Central do Brasil — SGS</a> · <span id="gerado-em">gerado em —</span><span id="ultimas-cargas"></span></span>
     <nav aria-label="Links do projeto">
       <a href="../">Documentação dbt</a>
       <a href="https://github.com/Jones51/indicadores-br" rel="noopener">Repositório</a>
@@ -504,10 +504,17 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
         .map((m) => ({...m, data: paraData(m.mes_referencia)}))
         .sort((a, b) => a.data - b.data);
       porMes = new Map(MESES_DADOS.map((m) => [chaveMes(m.data), m]));
+      const fmtBrasilia = new Intl.DateTimeFormat('pt-BR', {dateStyle: 'long', timeStyle: 'short', timeZone: 'America/Sao_Paulo'});
       if (dados.gerado_em) {
-        const quando = new Intl.DateTimeFormat('pt-BR', {dateStyle: 'long', timeStyle: 'short', timeZone: 'America/Sao_Paulo'})
-          .format(new Date(dados.gerado_em));
-        document.getElementById('gerado-em').textContent = 'gerado em ' + quando + ' (horário de Brasília)';
+        document.getElementById('gerado-em').textContent = 'gerado em ' + fmtBrasilia.format(new Date(dados.gerado_em)) + ' (horário de Brasília)';
+      }
+      // Última carga por fonte, de raw.cargas (ADR 0006). Ausente em JSONs antigos: não mostra nada.
+      const NOMES_FONTES = {bcb: 'BCB', ibge: 'IBGE'};
+      const cargas = Object.entries(dados.ultimas_cargas || {})
+        .filter(([, quando]) => !Number.isNaN(new Date(quando).getTime()))
+        .map(([fonte, quando]) => (NOMES_FONTES[fonte] || fonte) + ' em ' + fmtBrasilia.format(new Date(quando)));
+      if (cargas.length) {
+        document.getElementById('ultimas-cargas').textContent = ' · última carga: ' + cargas.join(', ');
       }
       desenharKpis();
       aplicarPeriodo(periodo, false);

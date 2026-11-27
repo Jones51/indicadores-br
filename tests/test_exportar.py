@@ -1,10 +1,17 @@
 import json
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta, timezone
 
 import duckdb
 import pytest
 
-from indicadores.exportar import COLUNAS, exportar, linhas_para_meses, montar_payload
+from indicadores.exportar import (
+    COLUNAS,
+    exportar,
+    ler_ultimas_cargas,
+    linhas_para_meses,
+    montar_payload,
+)
+from indicadores.load import DDL_RAW_CARGAS
 
 DDL_MART = """
 create schema marts;
@@ -60,7 +67,49 @@ def test_linhas_para_meses_rejeita_linha_com_colunas_a_menos():
 
 def test_montar_payload_normaliza_gerado_em_para_utc():
     payload = montar_payload([], datetime(2026, 11, 27, 12, 30, 15, 999, tzinfo=UTC))
-    assert payload == {"gerado_em": "2026-11-27T12:30:15+00:00", "fonte": "BCB SGS", "meses": []}
+    assert payload == {
+        "gerado_em": "2026-11-27T12:30:15+00:00",
+        "fonte": "BCB SGS",
+        "ultimas_cargas": {},
+        "meses": [],
+    }
+
+
+def test_montar_payload_inclui_ultimas_cargas_em_utc():
+    brt = timezone(timedelta(hours=-3))
+    payload = montar_payload(
+        [],
+        datetime(2026, 11, 27, tzinfo=UTC),
+        {
+            "ibge": datetime(2026, 11, 27, 6, 20, tzinfo=brt),
+            "bcb": datetime(2026, 11, 27, 9, 0, tzinfo=UTC),
+        },
+    )
+    assert list(payload["ultimas_cargas"]) == ["bcb", "ibge"]
+    assert payload["ultimas_cargas"]["ibge"] == "2026-11-27T09:20:00+00:00"
+
+
+def test_ler_ultimas_cargas_sem_tabela_retorna_vazio():
+    con = duckdb.connect()
+    assert ler_ultimas_cargas(con) == {}
+    con.close()
+
+
+def _registrar_cargas(caminho):
+    con = duckdb.connect(str(caminho))
+    con.execute(DDL_RAW_CARGAS)
+    linhas = [
+        ("r1", "bcb", "selic_meta", "2026-11-20 09:00:00+00"),
+        ("r2", "bcb", "selic_meta", "2026-11-27 09:17:00+00"),
+        ("r2", "ibge", "desocupacao", "2026-11-27 09:18:30+00"),
+    ]
+    for execucao, fonte, serie, quando in linhas:
+        con.execute(
+            "insert into raw.cargas values (?, ?, ?, 'incremental', 'margem', date '2026-08-01', "
+            "null, null, 1, 1, 1, 0.1, ?::timestamptz)",
+            [execucao, fonte, serie, quando],
+        )
+    con.close()
 
 
 def test_exportar_grava_json_compacto_ordenado(warehouse, tmp_path):
@@ -76,6 +125,19 @@ def test_exportar_grava_json_compacto_ordenado(warehouse, tmp_path):
     assert all(tuple(m) == COLUNAS for m in meses)
     assert meses[1]["ipca_12m"] is None
     assert meses[1]["dolar_ptax_medio"] == 4.9712
+    assert payload["ultimas_cargas"] == {}  # warehouse sem raw.cargas
+
+
+def test_exportar_inclui_ultima_carga_por_fonte(warehouse, tmp_path):
+    _registrar_cargas(warehouse)
+    saida = tmp_path / "dados.json"
+    exportar(saida, warehouse)
+    payload = json.loads(saida.read_text(encoding="utf-8"))
+    assert payload["ultimas_cargas"] == {
+        "bcb": "2026-11-27T09:17:00+00:00",
+        "ibge": "2026-11-27T09:18:30+00:00",
+    }
+    assert len(payload["meses"]) == 2  # formato existente preservado
 
 
 def test_exportar_abre_warehouse_somente_leitura(warehouse, tmp_path):

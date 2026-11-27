@@ -23,10 +23,16 @@ uv sync                                        # instalar dependências
 uvx dbc sync --level user                      # instalar driver DuckDB do dbt (uma vez por máquina)
 uv run pytest                                  # testes Python
 uv run ruff check . ; uv run ruff format .     # lint e formatação
-uv run indicadores ingest                      # ingestão (todas as séries, desde 2010)
+uv run indicadores ingest                      # ingestão INCREMENTAL (todas as séries; banco vazio = full)
+uv run indicadores ingest --full               # recarga completa desde 2010 (--inicio muda)
 uv run indicadores ingest --series selic_meta  # uma série
 uv run indicadores ingest --fonte ibge         # uma fonte (bcb | ibge)
+uv run indicadores validar --db <arquivo>      # estado: 0 válido, 3 abre mas inválido, 4 corrompido
+uv run indicadores herdar-auditoria --origem <antigo.duckdb>   # copia raw.cargas/reconciliacoes
+uv run indicadores reconciliar --base <inc.duckdb> --full <full.duckdb>   # full vence (sai 2 se estrutural)
+uv run indicadores resumo                      # tabela markdown da última execução em raw.cargas
 cd transform; uv run dbt build --profiles-dir .   # modelos + testes dbt
+uv run dbt source freshness --profiles-dir .      # freshness das sources (portão da CI)
 uv run dbt compile --profiles-dir . --static-analysis strict --generate-info-schema
 uv run dbt docs generate --profiles-dir . --no-compile ; uv run dbt docs serve --profiles-dir . --port 8080
 ```
@@ -35,7 +41,15 @@ uv run dbt docs generate --profiles-dir . --no-compile ; uv run dbt docs serve -
 
 - `src/indicadores/config.py` — caminhos e **catálogo de séries** (`SERIES_BCB`, `SERIES_IBGE`). Nova série = nova entrada aqui.
 - `src/indicadores/extract/` — um módulo por fonte; funções puras de parsing separadas do I/O HTTP.
-- `src/indicadores/load.py` — carga na camada `raw` (full refresh idempotente por série).
+- `src/indicadores/incremental.py` — janela incremental (funções puras): margem de 90 dias nas
+  diárias e 2 períodos nas mensais/trimestrais; full se não há dados, estado inválido ou `--full`.
+- `src/indicadores/ingestao.py` — orquestra janela → extração → substituição + auditoria por série.
+- `src/indicadores/load.py` — carga na camada `raw`, **incremental por padrão**: substitui só
+  `data >= início da janela` (delete + insert numa transação, idempotente); full apaga a série
+  inteira. Recusa apagar uma janela com dados quando a fonte devolve vazio. Toda carga grava uma
+  linha em `raw.cargas` na mesma transação (ADR 0006).
+- `src/indicadores/estado.py` / `reconciliar.py` — validação do warehouse herdado e
+  reconciliação incremental × full (ADR 0006).
 - `src/indicadores/exportar.py` — exporta o mart para `dados.json` do dashboard (`indicadores exportar`).
 - `dashboard/` — página estática (D3) publicada em `/dashboard/` no Pages (ADR 0005).
 - `transform/models/staging/` — `stg_<fonte>__<entidade>`, views, só tipagem/renomeação.
@@ -43,7 +57,9 @@ uv run dbt docs generate --profiles-dir . --no-compile ; uv run dbt docs serve -
 - `docs/adr/` — decisões de arquitetura numeradas (`NNNN-titulo.md`).
 - `ci/profiles.yml` — target `prod` usado pela CI (`data/prod.duckdb`).
 - `.github/workflows/dbt_build.yml` — CI: valida PRs; na `main` publica `prod.duckdb` na release
-  `warehouse` e o dbt Docs no GitHub Pages (ADR 0003).
+  `warehouse` e o dbt Docs no GitHub Pages (ADR 0003). A CI tem estado: parte do `prod.duckdb`
+  publicado (validado), reconcilia com um full às segundas e em PRs, e faz backup em
+  `prod.anterior.duckdb` antes de publicar (ADR 0006).
 
 ## Convenções
 
@@ -65,6 +81,14 @@ uv run dbt docs generate --profiles-dir . --no-compile ; uv run dbt docs serve -
 - SIDRA: período `AAAATT` (trimestre) ou `AAAAMM` (trimestre móvel, identificado pelo último mês);
   `data` = 1º dia do último mês do período (ADR 0004). Série = tabela + variável + classificação,
   identificada por `serie_nome` em `raw.ibge_sidra`.
+- As duas APIs dão 5xx/timeout esporádicos (ex.: 502 do SGS na janela de 10 anos da Selic):
+  todo GET passa por `extract/http.py:get_com_retentativas` (4 tentativas, 2s/4s/8s; 4xx não repete).
+- SIDRA incremental: faixa `p/AAAAPP-AAAAPP` (pode terminar num período não divulgado; faixa sem
+  dados = só cabeçalho; faixa invertida = 400). O full usa `p/all`.
+- Mudar o schema de uma tabela raw (DDL em `load.py`) torna o `prod.duckdb` publicado "inválido
+  como base" para `indicadores validar` (saída 3, o arquivo abre): o próximo run da CI faz full,
+  herda o histórico de auditoria (colunas em comum) e **faz o backup** dele em
+  `prod.anterior.duckdb`. Só arquivo corrompido/ausente (saída 4) fica sem backup.
 - A página de ajuda do SIDRA fica atrás de desafio JS (Cloudflare); para metadados use
   `servicodados.ibge.gov.br/api/v3/agregados/{tabela}/metadados`.
 - DuckDB aceita um só escritor: não rodar ingestão e dbt em paralelo.
@@ -102,6 +126,9 @@ trabalha isolado.
 - Escopo: arquivos que pode tocar e os que **não** pode; o que os outros agentes estão fazendo.
 - Validação obrigatória antes de cada commit (pytest, ruff, `dbt build`).
 - Entrega: push + PR com `gh pr create` + aguardar o CI. **Agente não faz merge.**
+- Force push (`git push --force-with-lease`) só na **própria branch** e **antes de qualquer
+  revisão**. Depois que o PR foi revisado, só commits novos: reescrever o histórico invalida o
+  que o revisor já leu e os comentários ancorados nos commits.
 - Pedir no relatório final: arquivos alterados, decisões tomadas, e o que pode conflitar.
 - Não usar portas fixas compartilhadas (cada um a sua, se precisar de servidor).
 

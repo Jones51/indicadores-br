@@ -5,7 +5,20 @@ import duckdb
 import pytest
 
 from indicadores.config import SerieSGS
-from indicadores.load import DDL_RAW, TABELAS_RAW, _migrar_extraido_em, carregar_serie, conectar
+from indicadores.load import (
+    DDL_RAW,
+    TABELAS_CONTROLE,
+    TABELAS_RAW,
+    JanelaVaziaError,
+    Substituicao,
+    _migrar_extraido_em,
+    carregar_serie,
+    carregar_serie_ibge,
+    conectar,
+    substituir_bcb,
+    substituir_ibge,
+    transacao,
+)
 
 SELIC = SerieSGS(432, "selic_meta", "% a.a.", "diaria")
 IPCA = SerieSGS(433, "ipca_mensal", "% a.m.", "mensal")
@@ -194,3 +207,61 @@ def test_conectar_migra_tabela_ibge_antiga(tmp_path):
         assert _tipo_extraido_em(con, "ibge_sidra") == "TIMESTAMP WITH TIME ZONE"
     finally:
         con.close()
+
+
+def test_toda_coluna_de_tempo_do_schema_raw_tem_fuso():
+    # Inclui as tabelas de controle (raw.cargas, raw.reconciliacoes): nenhuma `timestamp` sem fuso.
+    con = conectar(Path(":memory:"))
+    tipos = con.execute(
+        "select table_name, column_name, data_type from duckdb_columns() "
+        "where schema_name = 'raw' and data_type like 'TIMESTAMP%'"
+    ).fetchall()
+    con.close()
+    tabelas = {t for t, _, _ in tipos}
+    assert tabelas == set(TABELAS_RAW) | set(TABELAS_CONTROLE)
+    assert {tipo for _, _, tipo in tipos} == {"TIMESTAMP WITH TIME ZONE"}
+
+
+def test_carregar_serie_com_desde_substitui_so_a_janela(con):
+    carregar_serie(con, SELIC, [(date(2024, 1, d), 11.75) for d in range(1, 11)])
+
+    # janela a partir do dia 8: dias 8-10 saem, 8-12 entram (dia 9 revisado)
+    novos = [(date(2024, 1, 8), 11.75), (date(2024, 1, 9), 11.5)]
+    novos += [(date(2024, 1, d), 11.25) for d in (10, 11, 12)]
+    with transacao(con):
+        sub = substituir_bcb(con, SELIC, novos, desde=date(2024, 1, 8))
+
+    assert sub == Substituicao(removidas=3, inseridas=5)
+    linhas = _linhas(con, SELIC)
+    assert len(linhas) == 12
+    assert linhas[:7] == [(date(2024, 1, d), 11.75) for d in range(1, 8)]
+    assert linhas[8] == (date(2024, 1, 9), 11.5)
+
+
+def test_exigir_dados_impede_apagar_janela_com_resposta_vazia(con):
+    carregar_serie(con, SELIC, [(date(2024, 1, 1), 11.75), (date(2024, 1, 2), 11.75)])
+    with pytest.raises(JanelaVaziaError):
+        with transacao(con):
+            substituir_bcb(con, SELIC, [], desde=date(2024, 1, 2), exigir_dados=True)
+    assert len(_linhas(con, SELIC)) == 2
+    # janela realmente sem dados (nada a apagar) é aceita
+    with transacao(con):
+        assert substituir_bcb(con, SELIC, [], desde=date(2025, 1, 1), exigir_dados=True) == (0, 0)
+
+
+def test_substituir_ibge_com_desde(con):
+    from indicadores.config import SerieSIDRA
+    from indicadores.extract.ibge import RegistroSIDRA
+
+    pib = SerieSIDRA("pib", 1621, 584, "índice", "trimestral")
+    regs = [
+        RegistroSIDRA(f"2024{t:02d}", f"{t}º tri", date(2024, 3 * t, 1), t, "i") for t in (1, 2)
+    ]
+    carregar_serie_ibge(con, pib, regs)
+    revisado = [RegistroSIDRA("202402", "2º tri", date(2024, 6, 1), 2.5, "i")]
+    with transacao(con):
+        assert substituir_ibge(con, pib, revisado, desde=date(2024, 6, 1)) == (1, 1)
+    assert con.execute("select data, valor from raw.ibge_sidra order by data").fetchall() == [
+        (date(2024, 3, 1), 1.0),
+        (date(2024, 6, 1), 2.5),
+    ]

@@ -13,6 +13,7 @@ from datetime import date, datetime
 import httpx
 
 from indicadores.config import SerieSGS
+from indicadores.extract.http import get_com_retentativas
 
 BASE_URL = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.{codigo}/dados"
 JANELA_ANOS = 10
@@ -55,7 +56,8 @@ def extrair_serie(
     try:
         registros: list[tuple[date, float]] = []
         for ini, fi in janelas(inicio, fim):
-            resp = client.get(
+            resp = get_com_retentativas(
+                client,
                 BASE_URL.format(codigo=serie.codigo),
                 params={
                     "formato": "json",

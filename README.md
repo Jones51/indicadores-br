@@ -8,6 +8,7 @@ flowchart LR
     sidra["API SIDRA<br/>IBGE"] -->|httpx| py
     py --> raw[("raw.bcb_sgs<br/>DuckDB")]
     py --> rawi[("raw.ibge_sidra<br/>DuckDB")]
+    py --> aud[("raw.cargas<br/>auditoria")]
     raw --> stg["staging<br/>stg_bcb__sgs"]
     rawi --> stgi["staging<br/>stg_ibge__sidra"]
     stg --> mart["marts<br/>fct_indicadores_mensais"]
@@ -16,7 +17,8 @@ flowchart LR
 ```
 
 Pipeline público de indicadores macroeconômicos do Brasil (Selic, IPCA e dólar PTAX), extraídos do
-SGS do Banco Central, modelados com dbt e reconstruídos automaticamente a cada push.
+SGS do Banco Central, modelados com dbt e atualizados automaticamente a cada push (ingestão
+incremental, reconciliada toda semana com uma carga completa).
 
 - Ingere as séries do BCB em Python e modela em marts testados e documentados
 - Publica o site de documentação e o warehouse pronto — aberto a qualquer pessoa, sem credenciais
@@ -27,7 +29,8 @@ SGS do Banco Central, modelados com dbt e reconstruídos automaticamente a cada 
 
 | O que construí | Como implementei | Onde olhar |
 | --- | --- | --- |
-| **Ingestão** | extrator por fonte, parsing puro separado do HTTP, carga full idempotente por série | [`src/indicadores/`](src/indicadores/) |
+| **Ingestão** | extrator por fonte, parsing puro separado do HTTP, carga **incremental** com margem de revisão, idempotente e auditada | [`src/indicadores/`](src/indicadores/) · [ADR 0006](docs/adr/0006-ingestao-incremental.md) |
+| **Segurança dos dados** | estado validado, reconciliação semanal "full vence", portão dbt, backup e rollback do warehouse | [Produção](#-produção) |
 | **Pipeline dbt** | sources → `staging/` → `marts/` | [`transform/models/`](transform/models/) |
 | **Testes de dados** | teste de grão (`unique` / teste singular) + `not_null` nas chaves | [`_marts.yml`](transform/models/marts/_marts.yml) |
 | **dbt Docs hospedado** | linhagem (inclusive por coluna), descrições, testes | [Site de docs](https://jones51.github.io/indicadores-br/) |
@@ -58,6 +61,8 @@ flowchart LR
 | --- | --- | --- | --- |
 | Source | `raw.bcb_sgs` | uma linha por (série, data), formato longo | tabela (carga Python) |
 | Source | `raw.ibge_sidra` | uma linha por (série, período), formato longo | tabela (carga Python) |
+| Source | `raw.cargas` | uma linha por (execução, série, modo): auditoria da ingestão | tabela (carga Python) |
+| Source | `raw.reconciliacoes` | uma linha por (execução, série): reconciliação incremental × full | tabela (carga Python) |
 | Staging | `stg_bcb__sgs` | uma linha por (série, data), tipada | view |
 | Staging | `stg_ibge__sidra` | uma linha por (série, data), tipada | view |
 | Marts | `fct_indicadores_mensais` | uma linha por mês, uma coluna por indicador | table |
@@ -94,25 +99,88 @@ local e na CI.
 ## 🚀 Produção
 
 O GitHub Actions roda o pipeline inteiro, sem depender de máquina local:
-[`.github/workflows/dbt_build.yml`](.github/workflows/dbt_build.yml)
+[`.github/workflows/dbt_build.yml`](.github/workflows/dbt_build.yml). A CI tem **estado**: o
+`prod.duckdb` publicado na release é o ponto de partida da execução seguinte
+([ADR 0006](docs/adr/0006-ingestao-incremental.md)).
 
-| Gatilho | O que acontece |
-| --- | --- |
-| Pull request | Lint, testes e `dbt build` — valida sem publicar |
-| Push na `main` | Rebuild completo + publicação |
-| Semanal (segunda-feira) | Rebuild agendado — dados do BCB sempre atualizados |
-| Manual (`workflow_dispatch`) | Botão "Run workflow" na aba Actions |
+| Gatilho | Ingestão | Reconciliação full-vence | Publica |
+| --- | --- | --- | --- |
+| Pull request | incremental sobre o `prod.duckdb` (só leitura) | sim (valida o caminho do agendamento) | não |
+| Push na `main` | incremental | não | sim |
+| Semanal (segunda-feira) | incremental | **sim**: o full é publicado | sim |
+| Manual (`workflow_dispatch`) | `modo: incremental` ou `full` | se marcar `reconciliar` | sim |
 
-A cada execução na `main`, o Actions:
+Em cada execução, o Actions:
 
-1. Instala as dependências com `uv` e o driver DuckDB do dbt com `dbc`
-2. Roda `ruff` e `pytest`
-3. Ingere as séries do BCB e do IBGE (`indicadores ingest`)
-4. Roda `dbt build` com o profile de CI (`prod`)
-5. Publica `prod.duckdb` como asset da release [`warehouse`](https://github.com/Jones51/indicadores-br/releases/tag/warehouse)
-6. Gera o dbt Docs e o dashboard (`indicadores exportar`) e publica no GitHub Pages
+1. Instala as dependências (`uv`, driver `dbc`) e roda `ruff` e `pytest`
+2. **Baixa e valida o estado** (`indicadores validar`): para servir de base incremental, o
+   `prod.duckdb` da release precisa abrir no DuckDB, ter as tabelas raw com o schema esperado e
+   nenhuma chave duplicada. Se **abrir mas for inválido** (ex.: schema de uma versão anterior), a
+   carga vira full, o banco novo herda o histórico de auditoria e o arquivo ainda é usado como
+   backup. Se estiver **corrompido**, a carga vira full e o backup existente é preservado. Se a
+   release não tiver o arquivo, cada série vira full sozinha. Se a consulta à release falhar, o
+   run para
+3. **Ingere** (`indicadores ingest`): cada série recomeça um pouco antes da última data
+   carregada (90 dias nas diárias, 2 períodos nas mensais e trimestrais) e substitui essa
+   janela, numa transação que também grava a linha de auditoria em `raw.cargas`
+4. **Reconcilia** (segundas e PRs): carga full num banco separado e comparação série a série e
+   linha a linha (`indicadores reconciliar`). Revisão da fonte é registrada e o full vence.
+   Divergência estrutural (série sumiu, data regrediu, contagem caiu mais de 1%) **falha o run**
+5. **Portão**: `dbt build` e `dbt source freshness` precisam passar
+6. **Publica** (só na `main`): sobe o `prod.duckdb` anterior como `prod.anterior.duckdb`
+   (backup) e depois o novo `prod.duckdb` na release [`warehouse`](https://github.com/Jones51/indicadores-br/releases/tag/warehouse)
+7. Gera o dbt Docs e o dashboard (`indicadores exportar`) e publica no GitHub Pages
 
+Se qualquer passo antes da publicação falhar, o warehouse publicado continua o mesmo.
+
+### Acompanhar uma execução
+
+O **resumo do run** (aba *Summary* da execução no Actions) mostra o estado inicial usado, uma
+tabela por série (modo, motivo, última data antes → depois, linhas recebidas, removidas e
+inseridas) e, quando há reconciliação, o relatório dela, com exemplos de linhas divergentes.
 O badge no topo deste README leva às últimas execuções.
+
+O histórico fica no próprio warehouse publicado:
+
+```sql
+-- últimas execuções: modo e volume por fonte
+SELECT execucao_id, fonte, modo, motivo, count(*) AS series,
+       sum(linhas_recebidas) AS recebidas, max(executado_em) AS executado_em
+FROM raw.cargas
+GROUP BY ALL
+ORDER BY executado_em DESC
+LIMIT 20;
+
+-- divergências encontradas pela reconciliação semanal
+SELECT execucao_id, serie_nome, situacao, detalhe
+FROM raw.reconciliacoes
+WHERE situacao <> 'igual'
+ORDER BY executado_em DESC;
+```
+
+### Rollback do warehouse
+
+Cada publicação guarda a versão anterior como `prod.anterior.duckdb` na mesma release:
+
+| `prod.duckdb` anterior | `validar` | Backup |
+| --- | --- | --- |
+| válido | 0 | vira `prod.anterior.duckdb` |
+| abre, mas inválido como base (ex.: schema de uma versão anterior do código) | 3 | **vira** `prod.anterior.duckdb`: foi publicado depois de passar no `dbt build` |
+| corrompido (não abre no DuckDB) | 4 | não; o `prod.anterior.duckdb` existente é preservado |
+
+Para voltar à versão anterior (requer `gh` autenticado com permissão de escrita no repositório):
+
+```powershell
+gh release download warehouse -p prod.anterior.duckdb -O prod.duckdb --clobber
+uv run indicadores validar --db prod.duckdb      # 0 ou 3: abre; 4: corrompido, não publicar
+gh release upload warehouse prod.duckdb --clobber
+```
+
+Restaurar um backup de schema antigo (saída 3) é seguro: o próximo run faz full, herda o
+histórico de `raw.cargas`/`raw.reconciliacoes` e guarda esse mesmo arquivo como backup.
+Com saída 0, o próximo run parte do warehouse restaurado. O dbt Docs e o dashboard do Pages continuam com a
+versão do último run até o próximo, que pode ser disparado na aba Actions (*Run workflow*). Use
+`modo: full` para reconstruir do zero.
 
 ---
 
@@ -161,7 +229,8 @@ Requer [uv](https://docs.astral.sh/uv/). No PowerShell:
 ```powershell
 uv sync                                   # cria .venv e instala dependências
 uvx dbc sync --level user                 # driver DuckDB 2.x usado pelo dbt v2 (uma vez por máquina)
-uv run indicadores ingest                 # extrai do BCB e do IBGE e carrega em data/warehouse.duckdb
+uv run indicadores ingest                 # incremental: só a janela recente de cada série (banco vazio = full)
+uv run indicadores ingest --full          # recarga completa desde 2010
 cd transform
 uv run dbt build --profiles-dir .         # modelos + testes (target dev)
 ```
@@ -180,6 +249,15 @@ Dashboard localmente (abra http://localhost:8000):
 ```powershell
 uv run indicadores exportar                    # grava dashboard/dados.json a partir do mart
 uv run python -m http.server -d dashboard 8000
+```
+
+Validação de estado e reconciliação, com os mesmos comandos da CI:
+
+```powershell
+uv run indicadores validar --db data/warehouse.duckdb    # 0 válido, 3 abre mas inválido, 4 corrompido
+$env:DUCKDB_PATH = "data/full.duckdb"; uv run indicadores ingest --full; Remove-Item Env:DUCKDB_PATH
+uv run indicadores reconciliar --base data/warehouse.duckdb --full data/full.duckdb   # 2 = estrutural
+uv run indicadores resumo                                # tabela da última execução em raw.cargas
 ```
 
 Explorar o warehouse local na UI do DuckDB (somente leitura):
@@ -226,8 +304,12 @@ Nova série = nova entrada em `SERIES_BCB` ou `SERIES_IBGE` ([`config.py`](src/i
 ├── src/indicadores/
 │   ├── config.py                     # caminhos e catálogo de séries
 │   ├── extract/                      # um módulo por fonte (bcb, ibge)
-│   ├── load.py                       # carga na camada raw
-│   └── cli.py                        # `indicadores ingest`
+│   ├── incremental.py                # janela incremental (funções puras)
+│   ├── ingestao.py                   # orquestra janela -> extração -> carga + auditoria
+│   ├── load.py                       # carga na raw (substituição por intervalo) e raw.cargas
+│   ├── estado.py                     # validação do warehouse herdado (`indicadores validar`)
+│   ├── reconciliar.py                # reconciliação incremental x full
+│   └── cli.py                        # `indicadores ingest | validar | reconciliar | resumo | exportar`
 ├── tests/                            # testes unitários (sem rede)
 ├── transform/                        # projeto dbt
 │   ├── dbt_project.yml
@@ -287,7 +369,7 @@ pelo CI e só apareceu na revisão — e virou um teste que garante o padrão da
 - [x] CI pública + warehouse na release + docs no GitHub Pages
 - [x] Extrator IBGE (desemprego PNAD, PIB) até staging ([ADR 0004](docs/adr/0004-extrator-ibge-sidra.md))
 - [ ] IBGE no mart mensal
-- [ ] Ingestão incremental (só baixa o que falta)
+- [x] Ingestão incremental com reconciliação semanal, backup e auditoria ([ADR 0006](docs/adr/0006-ingestao-incremental.md))
 - [ ] Análise: correlação Selic × IPCA com defasagem
 - [x] Dashboard HTML interativo ([ADR 0005](docs/adr/0005-dashboard-estatico-pages.md))
 - [x] Processo de desenvolvimento com agentes em paralelo documentado

@@ -4,7 +4,7 @@ Contexto para o agente. Lido automaticamente em toda sessão neste diretório.
 
 ## O projeto
 
-Pipeline de indicadores econômicos do Brasil (BCB SGS; IBGE SIDRA planejado).
+Pipeline de indicadores econômicos do Brasil (BCB SGS e IBGE SIDRA).
 Projeto de aprendizado de desenvolvimento agêntico. O dono é engenheiro/analista de dados:
 explique decisões de engenharia de software quando relevantes, mas não conceitos básicos de dados.
 
@@ -25,6 +25,7 @@ uv run pytest                                  # testes Python
 uv run ruff check . ; uv run ruff format .     # lint e formatação
 uv run indicadores ingest                      # ingestão (todas as séries, desde 2010)
 uv run indicadores ingest --series selic_meta  # uma série
+uv run indicadores ingest --fonte ibge         # uma fonte (bcb | ibge)
 cd transform; uv run dbt build --profiles-dir .   # modelos + testes dbt
 uv run dbt compile --profiles-dir . --static-analysis strict --generate-info-schema
 uv run dbt docs generate --profiles-dir . --no-compile ; uv run dbt docs serve --profiles-dir . --port 8080
@@ -32,7 +33,7 @@ uv run dbt docs generate --profiles-dir . --no-compile ; uv run dbt docs serve -
 
 ## Estrutura
 
-- `src/indicadores/config.py` — caminhos e **catálogo de séries** (`SERIES_BCB`). Nova série = nova entrada aqui.
+- `src/indicadores/config.py` — caminhos e **catálogo de séries** (`SERIES_BCB`, `SERIES_IBGE`). Nova série = nova entrada aqui.
 - `src/indicadores/extract/` — um módulo por fonte; funções puras de parsing separadas do I/O HTTP.
 - `src/indicadores/load.py` — carga na camada `raw` (full refresh idempotente por série).
 - `transform/models/staging/` — `stg_<fonte>__<entidade>`, views, só tipagem/renomeação.
@@ -54,6 +55,16 @@ uv run dbt docs generate --profiles-dir . --no-compile ; uv run dbt docs serve -
 
 - API SGS exige `dataInicial`/`dataFinal` e limita séries diárias a **10 anos por consulta** (ver `janelas()`).
 - SGS retorna datas `dd/mm/aaaa` e valores como string; 404 = janela sem dados.
+- SIDRA (`apisidra.ibge.gov.br/values/t/.../n1/all/v/.../p/all[/cX/Y]/d/m`): 1º item da lista
+  JSON é o **cabeçalho**; localizar a coluna de período pelo rótulo (`Trimestre (Código)`,
+  `Trimestre Móvel (Código)`), não pela posição `D3C`/`D4C`.
+- SIDRA: valores string com símbolos — `-` = zero absoluto (vira 0), `..`/`...`/`X` = sem dado
+  (descartar). Erro de parâmetro = HTTP 400 com texto puro.
+- SIDRA: período `AAAATT` (trimestre) ou `AAAAMM` (trimestre móvel, identificado pelo último mês);
+  `data` = 1º dia do último mês do período (ADR 0004). Série = tabela + variável + classificação,
+  identificada por `serie_nome` em `raw.ibge_sidra`.
+- A página de ajuda do SIDRA fica atrás de desafio JS (Cloudflare); para metadados use
+  `servicodados.ibge.gov.br/api/v3/agregados/{tabela}/metadados`.
 - DuckDB aceita um só escritor: não rodar ingestão e dbt em paralelo.
 - Versão do `duckdb` (Python) e do driver em `dbc.toml` andam juntas: mesma linha major.
 

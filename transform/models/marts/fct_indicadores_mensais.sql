@@ -1,6 +1,13 @@
 -- Uma linha por mês com os principais indicadores consolidados.
+-- A espinha de meses vem de todas as séries: um mês aparece assim que qualquer
+-- indicador tiver observação (ex.: mês corrente com Selic e dólar, antes do IPCA sair).
 with stg as (
     select * from {{ ref('stg_bcb__sgs') }}
+),
+
+meses as (
+    select distinct mes_referencia
+    from stg
 ),
 
 -- Séries diárias: Selic meta = último valor do mês; dólar = média do mês
@@ -35,16 +42,17 @@ ipca as (
 )
 
 select
-    ipca.mes_referencia,
+    meses.mes_referencia,
     selic.selic_meta_aa,
     ipca.ipca_mensal,
     ipca.ipca_12m,
-    -- Juro real ex-post (Fisher): (1 + selic) / (1 + ipca 12m) - 1
+    -- Juro real ex-post (Fisher): (1 + selic) / (1 + ipca 12m) - 1; nulo se faltar insumo
     round(((1 + selic.selic_meta_aa / 100) / (1 + ipca.ipca_12m / 100) - 1) * 100, 4)
         as juro_real_ex_post_aa,
     dolar.dolar_ptax_medio,
     dolar.dolar_ptax_fim_mes
-from ipca
+from meses
 left join selic using (mes_referencia)
+left join ipca using (mes_referencia)
 left join dolar using (mes_referencia)
-order by ipca.mes_referencia
+order by meses.mes_referencia

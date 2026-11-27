@@ -1,0 +1,8 @@
+# Perfil local do projeto. Rode o dbt a partir de transform/ com `--profiles-dir .`
+indicadores_br:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('DUCKDB_PATH', '../data/warehouse.duckdb') }}"
+      threads: 4

@@ -1,0 +1,14 @@
+version: 2
+
+models:
+  - name: stg_bcb__sgs
+    description: Séries do BCB tipadas, uma linha por série e data.
+    columns:
+      - name: serie_nome
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [selic_meta, ipca_mensal, ipca_12m, dolar_ptax_venda]
+      - name: data_referencia
+        data_tests: [not_null]

@@ -1,0 +1,21 @@
+version: 2
+
+models:
+  - name: fct_indicadores_mensais
+    description: Indicadores macroeconômicos consolidados por mês.
+    columns:
+      - name: mes_referencia
+        description: Primeiro dia do mês de referência.
+        data_tests: [unique, not_null]
+      - name: selic_meta_aa
+        description: Meta Selic vigente no último dia do mês (% a.a.).
+      - name: ipca_mensal
+        description: Variação mensal do IPCA (%).
+      - name: ipca_12m
+        description: IPCA acumulado em 12 meses (%).
+      - name: juro_real_ex_post_aa
+        description: Selic meta descontada do IPCA 12m pela equação de Fisher (% a.a.).
+      - name: dolar_ptax_medio
+        description: Média mensal da PTAX venda (R$/US$).
+      - name: dolar_ptax_fim_mes
+        description: PTAX venda do último dia útil do mês (R$/US$).

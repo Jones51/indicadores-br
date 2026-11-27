@@ -1,0 +1,4 @@
+# dbc driver list
+[drivers]
+[drivers.duckdb]
+version = '>=2.0.1 <3'

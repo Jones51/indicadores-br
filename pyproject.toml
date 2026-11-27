@@ -1,0 +1,37 @@
+[project]
+name = "indicadores-br"
+version = "0.1.0"
+description = "Pipeline de indicadores econômicos do Brasil (BCB SGS + IBGE SIDRA) com DuckDB e dbt"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "dbt>=2.0.13,<3",
+    "duckdb>=2.0.1,<3",
+    "httpx>=0.27",
+]
+
+[project.scripts]
+indicadores = "indicadores.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/indicadores"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

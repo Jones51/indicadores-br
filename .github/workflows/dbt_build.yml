@@ -52,6 +52,14 @@ jobs:
           uv run dbt compile --profiles-dir ../ci --static-analysis strict --generate-info-schema
           uv run dbt docs generate --profiles-dir ../ci --no-compile --output-dir "${{ github.workspace }}/site"
 
+      # Roda também em PRs: valida que o mart exporta e que a página vai junto (ADR 0005)
+      - name: Dashboard (página + JSON exportado do mart)
+        run: |
+          mkdir -p site/dashboard
+          cp -r dashboard/. site/dashboard/
+          uv run indicadores exportar --saida site/dashboard/dados.json
+          ls -l site/dashboard
+
       - name: Publicar warehouse na release
         if: env.PUBLICAR == 'true'
         env:

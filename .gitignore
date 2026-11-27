@@ -19,3 +19,6 @@ site/
 # Ambiente
 .env
 .claude/settings.local.json
+
+# Dashboard: JSON gerado por `indicadores exportar` (a CI regenera)
+dashboard/dados.json

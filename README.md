@@ -31,6 +31,7 @@ SGS do Banco Central, modelados com dbt e reconstruídos automaticamente a cada 
 | **Pipeline dbt** | sources → `staging/` → `marts/` | [`transform/models/`](transform/models/) |
 | **Testes de dados** | teste de grão (`unique` / teste singular) + `not_null` nas chaves | [`_marts.yml`](transform/models/marts/_marts.yml) |
 | **dbt Docs hospedado** | linhagem (inclusive por coluna), descrições, testes | [Site de docs](https://jones51.github.io/indicadores-br/) |
+| **Dashboard público** | HTML estático + D3, alimentado por um JSON que a CI exporta do mart | [Dashboard](https://jones51.github.io/indicadores-br/dashboard/) |
 | **CI pública** | lint + testes + build + publicação a cada push | [Workflow](https://github.com/Jones51/indicadores-br/actions) |
 | **Ambientes** | `dev` local vs `prod` na CI | [`ci/profiles.yml`](ci/profiles.yml) |
 | **Warehouse publicado** | um `ATTACH`, consultável por qualquer um | [Consultar](#-consultar-o-warehouse-publicado) |
@@ -108,7 +109,7 @@ A cada execução na `main`, o Actions:
 3. Ingere as séries do BCB e do IBGE (`indicadores ingest`)
 4. Roda `dbt build` com o profile de CI (`prod`)
 5. Publica `prod.duckdb` como asset da release [`warehouse`](https://github.com/Jones51/indicadores-br/releases/tag/warehouse)
-6. Gera o dbt Docs e publica no GitHub Pages
+6. Gera o dbt Docs e o dashboard (`indicadores exportar`) e publica no GitHub Pages
 
 O badge no topo deste README leva às últimas execuções.
 
@@ -145,6 +146,11 @@ O site mostra:
 - **Descrições** de modelos e colunas vindas do YAML
 - Quais colunas têm **testes**
 
+O **dashboard** (KPIs e gráficos de Selic, IPCA, juro real e dólar) é publicado no mesmo site,
+a partir de um JSON exportado do mart pela CI ([ADR 0005](docs/adr/0005-dashboard-estatico-pages.md)):
+
+**→ [https://jones51.github.io/indicadores-br/dashboard/](https://jones51.github.io/indicadores-br/dashboard/)**
+
 ---
 
 ## 💻 Rodar localmente
@@ -166,6 +172,13 @@ cd transform
 uv run dbt compile --profiles-dir . --static-analysis strict --generate-info-schema
 uv run dbt docs generate --profiles-dir . --no-compile
 uv run dbt docs serve --profiles-dir . --port 8080
+```
+
+Dashboard localmente (abra http://localhost:8000):
+
+```powershell
+uv run indicadores exportar                    # grava dashboard/dados.json a partir do mart
+uv run python -m http.server -d dashboard 8000
 ```
 
 Explorar o warehouse local na UI do DuckDB (somente leitura):
@@ -206,6 +219,7 @@ Nova série = nova entrada em `SERIES_BCB` ou `SERIES_IBGE` ([`config.py`](src/i
 .
 ├── .github/workflows/dbt_build.yml   # CI pública: lint, testes, build, publicação
 ├── ci/profiles.yml                   # target prod do DuckDB para o Actions
+├── dashboard/index.html              # dashboard estático (lê dados.json exportado do mart)
 ├── data/                             # warehouses locais (gitignored; a CI regenera)
 ├── docs/adr/                         # decisões de arquitetura (ADRs)
 ├── src/indicadores/
@@ -235,4 +249,4 @@ Nova série = nova entrada em `SERIES_BCB` ou `SERIES_IBGE` ([`config.py`](src/i
 - [ ] IBGE no mart mensal
 - [ ] Ingestão incremental (só baixa o que falta)
 - [ ] Análise: correlação Selic × IPCA com defasagem
-- [ ] Dashboard HTML interativo
+- [x] Dashboard HTML interativo ([ADR 0005](docs/adr/0005-dashboard-estatico-pages.md))

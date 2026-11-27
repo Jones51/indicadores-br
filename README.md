@@ -113,10 +113,13 @@ O GitHub Actions roda o pipeline inteiro, sem depender de máquina local:
 Em cada execução, o Actions:
 
 1. Instala as dependências (`uv`, driver `dbc`) e roda `ruff` e `pytest`
-2. **Baixa e valida o estado**: o `prod.duckdb` da release precisa abrir no DuckDB, ter as
-   tabelas raw com o schema esperado e nenhuma chave duplicada (`indicadores validar`). Se for
-   inválido, é descartado e a carga vira full. Se a release não tiver o arquivo, cada série vira
-   full sozinha. Se a consulta à release falhar, o run para
+2. **Baixa e valida o estado** (`indicadores validar`): para servir de base incremental, o
+   `prod.duckdb` da release precisa abrir no DuckDB, ter as tabelas raw com o schema esperado e
+   nenhuma chave duplicada. Se **abrir mas for inválido** (ex.: schema de uma versão anterior), a
+   carga vira full, o banco novo herda o histórico de auditoria e o arquivo ainda é usado como
+   backup. Se estiver **corrompido**, a carga vira full e o backup existente é preservado. Se a
+   release não tiver o arquivo, cada série vira full sozinha. Se a consulta à release falhar, o
+   run para
 3. **Ingere** (`indicadores ingest`): cada série recomeça um pouco antes da última data
    carregada (90 dias nas diárias, 2 períodos nas mensais e trimestrais) e substitui essa
    janela, numa transação que também grava a linha de auditoria em `raw.cargas`
@@ -157,16 +160,25 @@ ORDER BY executado_em DESC;
 
 ### Rollback do warehouse
 
-Cada publicação guarda a versão anterior como `prod.anterior.duckdb` na mesma release. Para
-voltar a ela (requer `gh` autenticado com permissão de escrita no repositório):
+Cada publicação guarda a versão anterior como `prod.anterior.duckdb` na mesma release:
+
+| `prod.duckdb` anterior | `validar` | Backup |
+| --- | --- | --- |
+| válido | 0 | vira `prod.anterior.duckdb` |
+| abre, mas inválido como base (ex.: schema de uma versão anterior do código) | 3 | **vira** `prod.anterior.duckdb`: foi publicado depois de passar no `dbt build` |
+| corrompido (não abre no DuckDB) | 4 | não; o `prod.anterior.duckdb` existente é preservado |
+
+Para voltar à versão anterior (requer `gh` autenticado com permissão de escrita no repositório):
 
 ```powershell
 gh release download warehouse -p prod.anterior.duckdb -O prod.duckdb --clobber
-uv run indicadores validar --db prod.duckdb      # confere antes de publicar
+uv run indicadores validar --db prod.duckdb      # 0 ou 3: abre; 4: corrompido, não publicar
 gh release upload warehouse prod.duckdb --clobber
 ```
 
-O próximo run parte do warehouse restaurado. O dbt Docs e o dashboard do Pages continuam com a
+Restaurar um backup de schema antigo (saída 3) é seguro: o próximo run faz full, herda o
+histórico de `raw.cargas`/`raw.reconciliacoes` e guarda esse mesmo arquivo como backup.
+Com saída 0, o próximo run parte do warehouse restaurado. O dbt Docs e o dashboard do Pages continuam com a
 versão do último run até o próximo, que pode ser disparado na aba Actions (*Run workflow*). Use
 `modo: full` para reconstruir do zero.
 
@@ -242,7 +254,7 @@ uv run python -m http.server -d dashboard 8000
 Validação de estado e reconciliação, com os mesmos comandos da CI:
 
 ```powershell
-uv run indicadores validar --db data/warehouse.duckdb    # sai com 1 se o estado for inválido
+uv run indicadores validar --db data/warehouse.duckdb    # 0 válido, 3 abre mas inválido, 4 corrompido
 $env:DUCKDB_PATH = "data/full.duckdb"; uv run indicadores ingest --full; Remove-Item Env:DUCKDB_PATH
 uv run indicadores reconciliar --base data/warehouse.duckdb --full data/full.duckdb   # 2 = estrutural
 uv run indicadores resumo                                # tabela da última execução em raw.cargas

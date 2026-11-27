@@ -53,9 +53,29 @@ validação antes do uso, um jeito de detectar deriva, backup e auditoria.
    `raw.ibge_sidra` existem com o schema que o código atual cria? As tabelas de controle, se
    existirem, também? Há chaves `(série, data)` duplicadas? O schema esperado é derivado dos
    próprios DDLs de `load.py`, então não existe uma segunda definição para manter em sincronia.
-3. Inválido → o arquivo é descartado e a carga é full (`--motivo estado_invalido`). Release sem
-   o asset → banco novo, e cada série vira full sozinha (`sem_dados`). **Erro ao consultar a
-   release** (rede, permissão) → o run falha: não é seguro tratar isso como "não há estado".
+3. O resultado tem três casos, com códigos de saída distintos de 1 (exceção do Python) e 2 (erro
+   de argumento). Qualquer outro código falha o run, para que uma falha inesperada nunca seja lida
+   como diagnóstico. O passo expõe `abre` e `valido`:
+
+   | Caso | `validar` | `abre` / `valido` | Ingestão | Auditoria | Backup |
+   | --- | --- | --- | --- | --- | --- |
+   | válido | 0 | true / true | incremental sobre o arquivo | já está nele | sim |
+   | **abre, mas inválido como base** (schema diferente, tabela ausente, duplicatas) | 3 | true / false | full (`estado_invalido`) num banco novo | **herdada** | **sim** |
+   | **corrompido** (não abre no DuckDB) | 4 | false / false | full (`estado_invalido`) | perdida | não |
+
+   - **Schema antigo ainda é backup.** Um arquivo que abre, mas tem outro schema (o caso normal
+     depois de um PR que muda um DDL), foi publicado depois de passar no `dbt build`. É
+     justamente a versão que se quer para rollback, então o backup depende só de `abre`. Só um
+     arquivo que nem abre deixa de sobrescrever o `prod.anterior.duckdb` existente.
+   - **Auditoria herdada.** No caso "abre, mas inválido", o banco novo recebe o histórico de
+     `raw.cargas`/`raw.reconciliacoes` do arquivo descartado (`indicadores herdar-auditoria`).
+     A cópia usa só as **colunas em comum**, deduplica pela chave e roda uma transação por
+     tabela. Ela **nunca falha o run**: se uma tabela não puder ser copiada (falta a chave, ou
+     falta uma coluna `not null` sem default), o motivo vai para o resumo do run e os dados
+     seguem.
+   - Release sem o asset → banco novo, e cada série vira full sozinha (`sem_dados`). **Erro ao
+     consultar a release** (rede, permissão) → o run falha: não é seguro tratar isso como "não
+     há estado".
 
 ### 3. Reconciliação semanal "full vence"
 
@@ -73,8 +93,8 @@ separado** e roda `indicadores reconciliar --base prod.duckdb --full full.duckdb
 - séries que saíram do catálogo e só existem no incremental ficam como `fora_do_catalogo`: o
   full as descarta, o que limpa órfãos (ADR 0004);
 - o resultado vai para o **resumo do run** e para `raw.reconciliacoes`. O banco full herda o
-  histórico de `raw.cargas`/`raw.reconciliacoes` do incremental, então a auditoria não se perde
-  quando o full vence.
+  histórico de `raw.cargas`/`raw.reconciliacoes` do incremental pela mesma função tolerante do
+  item 2, então a auditoria não se perde quando o full vence.
 
 A reconciliação também roda em **PRs** (só valida, nada é publicado). Assim o caminho do
 agendamento é exercitado antes do merge. No `workflow_dispatch`, roda se `reconciliar` for
@@ -86,8 +106,8 @@ marcado. Fora disso, push e manual rodam só o incremental.
   `dbt source freshness` precisam passar. Qualquer falha antes da publicação deixa o
   `prod.duckdb` publicado intocado.
 - **Backup:** antes de sobrescrever, o `prod.duckdb` baixado no início sobe como
-  `prod.anterior.duckdb` na mesma release, mas só se for válido. Um estado inválido não
-  sobrescreve um backup bom.
+  `prod.anterior.duckdb` na mesma release, **se abrir no DuckDB** (`abre=true`), mesmo que seja
+  inválido como base incremental. Um arquivo corrompido não sobrescreve um backup bom.
 - **Rollback:** publicar `prod.anterior.duckdb` de volta como `prod.duckdb` (passo a passo no
   README). O dashboard/docs voltam no próximo run.
 
@@ -127,4 +147,9 @@ testes e `freshness`. O dashboard mostra a última carga por fonte (`ultimas_car
   que remova muitas linhas falhará o run e exigirá olhar o relatório e, se for o caso, rodar o
   workflow manual com `modo: full`.
 - Em PRs, a reconciliação dobra as chamadas às APIs (um incremental + um full).
+- Uma mudança de schema nas **tabelas de controle** que acrescente coluna `not null` sem default
+  faz a herança daquela tabela ser pulada (registrado no resumo). Para não perder histórico,
+  colunas novas de auditoria devem nascer nuláveis ou com default.
+- Um arquivo corrompido perde o histórico de auditoria daquele estado. O `prod.anterior.duckdb`,
+  preservado nesse caso, ainda o contém até a execução anterior.
 - `raw.cargas` cresce ~8 linhas por run (~16 nas segundas): desprezível.

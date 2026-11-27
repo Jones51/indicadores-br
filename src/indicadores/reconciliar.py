@@ -217,9 +217,12 @@ def relatorio_markdown(
             "publicado.**"
         )
     elif revisoes:
-        veredito = f"Revisões em {len(revisoes)} série(s): registradas; **o full é publicado**."
+        veredito = (
+            f"Revisões em {len(revisoes)} série(s): registradas; **o full vence** e segue "
+            "para o build."
+        )
     else:
-        veredito = "Incremental e full idênticos; **o full é publicado**."
+        veredito = "Incremental e full idênticos; **o full vence** e segue para o build."
     saida = [
         f"### Reconciliação incremental × full — execução `{execucao_id}`",
         "",

@@ -4,7 +4,7 @@ import duckdb
 import pytest
 from conftest import SERIES_BCB_TESTE, SERIES_IBGE_TESTE
 
-from indicadores.estado import validar_estado
+from indicadores.estado import diagnosticar_estado, validar_estado
 from indicadores.ingestao import ingerir
 from indicadores.load import conectar
 
@@ -95,3 +95,35 @@ def test_estado_invalido_descartado_resulta_em_full(fonte, tmp_path):
         con.close()
     assert {(c.modo, c.motivo) for c in cargas} == {("full", "estado_invalido")}
     assert validar_estado(caminho) == []
+
+
+def test_diagnostico_separa_corrompido_de_invalido_como_base(valido, tmp_path):
+    """Corrompido não serve nem de backup; schema diferente serve (passou no build ao publicar)."""
+    assert diagnosticar_estado(valido) == (True, [])
+    assert diagnosticar_estado(valido).valido
+
+    lixo = tmp_path / "lixo.duckdb"
+    lixo.write_bytes(b"corrompido")
+    corrompido = diagnosticar_estado(lixo)
+    assert (corrompido.abre, corrompido.valido) == (False, False)
+    ausente = diagnosticar_estado(tmp_path / "nada.duckdb")
+    assert (ausente.abre, ausente.valido) == (False, False)
+
+    con = duckdb.connect(str(valido))
+    con.execute("alter table raw.bcb_sgs drop column extraido_em")  # schema antigo
+    con.close()
+    antigo = diagnosticar_estado(valido)
+    assert (antigo.abre, antigo.valido) == (True, False)
+    assert antigo.problemas[0].startswith("raw.bcb_sgs com schema diferente")
+
+
+def test_duplicata_abre_mas_e_invalido(valido):
+    con = duckdb.connect(str(valido))
+    con.execute(
+        "insert into raw.ibge_sidra (serie_nome, tabela, variavel, periodo_codigo, periodo_nome, "
+        "data, valor, unidade) select 'x', 1, 1, '202401', 'p', date '2024-03-01', 1, '%' "
+        "from range(2)"
+    )
+    con.close()
+    diagnostico = diagnosticar_estado(valido)
+    assert (diagnostico.abre, diagnostico.valido) == (True, False)

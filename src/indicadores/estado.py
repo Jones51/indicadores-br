@@ -7,6 +7,7 @@ isso a validação só **lê** o arquivo (`read_only`) e devolve a lista de prob
 from __future__ import annotations
 
 from pathlib import Path
+from typing import NamedTuple
 
 import duckdb
 
@@ -39,20 +40,35 @@ def esquema_esperado() -> dict[str, list[tuple[str, str, bool]]]:
         con.close()
 
 
-def validar_estado(path: Path | str) -> list[str]:
-    """Retorna os problemas do warehouse em `path`; lista vazia = pode servir de base incremental.
+class Diagnostico(NamedTuple):
+    """Resultado da validação: `abre` separa o arquivo corrompido do inválido como base."""
 
-    Verifica: o arquivo existe e abre no DuckDB; as tabelas de dados (`TABELAS_RAW`) existem
-    com o schema esperado; as de controle (`TABELAS_CONTROLE`), se existirem, também (bancos
-    anteriores à auditoria não as têm, e `conectar()` as cria); e não há duplicatas na chave.
+    abre: bool  # existe e abre no DuckDB (serve de backup para rollback)
+    problemas: list[str]  # vazio = pode servir de base incremental
+
+    @property
+    def valido(self) -> bool:
+        return self.abre and not self.problemas
+
+
+def diagnosticar_estado(path: Path | str) -> Diagnostico:
+    """Diagnostica o warehouse em `path` sem alterá-lo.
+
+    `abre=False`: o arquivo não existe ou não abre no DuckDB (corrompido). `abre=True` com
+    problemas: abre, mas não serve de base incremental (tabela de dados ausente, schema
+    diferente do que os DDLs atuais criam, chave duplicada). Um arquivo assim foi publicado
+    depois de passar no `dbt build`, então ainda é um bom backup para rollback.
+
+    As tabelas de controle (`TABELAS_CONTROLE`) só são conferidas se existirem: bancos
+    anteriores à auditoria não as têm, e `conectar()` as cria.
     """
     path = Path(path)
     if not path.exists():
-        return [f"arquivo não existe: {path}"]
+        return Diagnostico(False, [f"arquivo não existe: {path}"])
     try:
         con = duckdb.connect(str(path), read_only=True)
     except duckdb.Error as erro:
-        return [f"não abre no DuckDB: {erro}"]
+        return Diagnostico(False, [f"não abre no DuckDB: {erro}"])
     try:
         esperado, real = esquema_esperado(), _colunas(con)
         problemas = []
@@ -67,7 +83,7 @@ def validar_estado(path: Path | str) -> list[str]:
                     f"{real[tabela]} (esperado {esperado[tabela]})"
                 )
         if problemas:
-            return problemas
+            return Diagnostico(True, problemas)
         for tabela, chave in CHAVES.items():
             colunas = ", ".join(chave)
             (duplicadas,) = con.execute(
@@ -76,6 +92,11 @@ def validar_estado(path: Path | str) -> list[str]:
             ).fetchone()
             if duplicadas:
                 problemas.append(f"raw.{tabela}: {duplicadas} chaves ({colunas}) duplicadas")
-        return problemas
+        return Diagnostico(True, problemas)
     finally:
         con.close()
+
+
+def validar_estado(path: Path | str) -> list[str]:
+    """Problemas do warehouse em `path`; lista vazia = pode servir de base incremental."""
+    return diagnosticar_estado(path).problemas

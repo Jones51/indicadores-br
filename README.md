@@ -36,6 +36,7 @@ SGS do Banco Central, modelados com dbt e reconstruídos automaticamente a cada 
 | **Ambientes** | `dev` local vs `prod` na CI | [`ci/profiles.yml`](ci/profiles.yml) |
 | **Warehouse publicado** | um `ATTACH`, consultável por qualquer um | [Consultar](#-consultar-o-warehouse-publicado) |
 | **Decisões de arquitetura** | ADRs numerados | [`docs/adr/`](docs/adr/) |
+| **Agentes em paralelo** | subagentes em git worktrees, PR por agente, integração revisada | [Como foi feito](#-desenvolvimento-com-agentes-em-paralelo) |
 
 ---
 
@@ -240,6 +241,45 @@ Nova série = nova entrada em `SERIES_BCB` ou `SERIES_IBGE` ([`config.py`](src/i
 
 ---
 
+## 🤖 Desenvolvimento com agentes em paralelo
+
+Este projeto também é um estudo de **desenvolvimento agêntico**: várias funcionalidades foram
+construídas por subagentes do Claude Code trabalhando **ao mesmo tempo**, cada um na sua
+[git worktree](https://git-scm.com/docs/git-worktree) e branch, com um agente orquestrador
+planejando, revisando e integrando. O processo completo está em [`CLAUDE.md`](CLAUDE.md#desenvolvimento-com-agentes-em-paralelo).
+
+```mermaid
+flowchart LR
+    orq["Orquestrador<br/>(sessão principal)"] -->|briefing + worktree| A["Agente A<br/>timestamp + mart"]
+    orq --> B["Agente B<br/>extrator IBGE"]
+    orq --> C["Agente C<br/>dashboard"]
+    A -->|PR #2| rev{"revisão<br/>+ CI"}
+    B -->|PR #3| rev
+    C -->|PR #4| rev
+    rev -->|merge um a um| main(("main"))
+```
+
+| Etapa | Como foi feito |
+| --- | --- |
+| **Planejamento** | tarefas divididas por área de código, com mapa de conflitos e números de ADR reservados |
+| **Isolamento** | uma worktree por agente, irmã do repositório (`..\indicadores-br.worktrees\<branch>`), com `.venv` e warehouse próprios |
+| **Dados** | cada worktree semeada com o snapshot de produção (`prod.duckdb` da release), como um *clone* de prod |
+| **Entrega** | cada agente valida (pytest, ruff, `dbt build`), abre o PR e espera o CI — sem merge |
+| **Integração** | simulação com `git merge-tree`, merge um PR por vez, `git merge origin/main` na branch seguinte |
+
+**1ª onda** — 3 agentes em paralelo, 3 PRs, 1 conflito textual e 1 semântico:
+
+| PR | Agente | Entrega | Integração |
+| --- | --- | --- | --- |
+| [#2](https://github.com/Jones51/indicadores-br/pull/2) | A | `extraido_em` com fuso, mês corrente no mart, testes da carga | merge limpo |
+| [#3](https://github.com/Jones51/indicadores-br/pull/3) | B | extrator IBGE (SIDRA) até staging ([ADR 0004](docs/adr/0004-extrator-ibge-sidra.md)) | conflito textual em `load.py` + conflito **semântico** (tabela nova com o bug que o #2 corrigiu) |
+| [#4](https://github.com/Jones51/indicadores-br/pull/4) | C | dashboard + export JSON ([ADR 0005](docs/adr/0005-dashboard-estatico-pages.md)) | sem conflito; revalidado sobre a `main` nova (mês corrente com IPCA nulo) |
+
+O que ficou de lição: o git só acusa conflitos **textuais**. O do PR #3 passou limpo pelo git e
+pelo CI e só apareceu na revisão — e virou um teste que garante o padrão daqui em diante.
+
+---
+
 ## 🗺️ Roadmap
 
 - [x] Esqueleto: ingestão BCB, staging, mart mensal, testes
@@ -250,3 +290,4 @@ Nova série = nova entrada em `SERIES_BCB` ou `SERIES_IBGE` ([`config.py`](src/i
 - [ ] Ingestão incremental (só baixa o que falta)
 - [ ] Análise: correlação Selic × IPCA com defasagem
 - [x] Dashboard HTML interativo ([ADR 0005](docs/adr/0005-dashboard-estatico-pages.md))
+- [x] Processo de desenvolvimento com agentes em paralelo documentado

@@ -34,3 +34,103 @@ sources:
             data_tests: [not_null]
           - name: valor
             data_tests: [not_null]
+      - name: cargas
+        description: >
+          Auditoria da ingestão (ADR 0006): uma linha por série por execução de
+          `indicadores ingest`, gravada na mesma transação que a carga da série. Na CI, o
+          warehouse publicado acumula o histórico de todas as execuções.
+        config:
+          loaded_at_field: executado_em
+          freshness:
+            warn_after: {count: 8, period: day}
+        columns:
+          - name: execucao_id
+            description: Id da execução (`GITHUB_RUN_ID-tentativa` na CI; `local-...` fora dela).
+            data_tests: [not_null]
+          - name: fonte
+            description: Fonte da série.
+            data_tests:
+              - not_null
+              - accepted_values:
+                  arguments:
+                    values: [bcb, ibge]
+          - name: serie_nome
+            description: Nome da série no catálogo (`config.py`).
+            data_tests: [not_null]
+          - name: modo
+            description: "`full` (série inteira desde `--inicio`) ou `incremental` (janela com margem)."
+            data_tests:
+              - not_null
+              - accepted_values:
+                  arguments:
+                    values: [full, incremental]
+          - name: motivo
+            description: >
+              Por que esse modo: `margem` (incremental normal), `sem_dados` (série nova ou banco
+              vazio), `forcado` (`--full`), `estado_invalido` (estado descartado ou última data
+              no futuro) ou `reconciliacao` (full da reconciliação semanal).
+            data_tests:
+              - not_null
+              - accepted_values:
+                  arguments:
+                    values: [margem, sem_dados, forcado, estado_invalido, reconciliacao]
+          - name: inicio_pedido
+            description: Primeira data pedida à fonte; no incremental, também o início do intervalo substituído.
+            data_tests: [not_null]
+          - name: ultima_data_antes
+            description: Última `data` da série antes da carga (nulo se a série não tinha dados).
+          - name: ultima_data_depois
+            description: Última `data` da série depois da carga.
+          - name: linhas_recebidas
+            description: Linhas devolvidas pela fonte (após descartar valores ausentes).
+            data_tests: [not_null]
+          - name: linhas_removidas
+            description: Linhas apagadas da raw (série inteira no full; `data >= inicio_pedido` no incremental).
+            data_tests: [not_null]
+          - name: linhas_inseridas
+            description: Linhas inseridas na raw (igual a `linhas_recebidas`).
+            data_tests: [not_null]
+          - name: duracao_s
+            description: Duração da extração + carga da série, em segundos.
+            data_tests: [not_null]
+          - name: executado_em
+            description: Instante da carga (timestamptz).
+            data_tests: [not_null]
+      - name: reconciliacoes
+        description: >
+          Resultado da reconciliação semanal "full vence" (ADR 0006): uma linha por série por
+          execução, comparando o warehouse incremental com uma carga full do zero.
+        columns:
+          - name: execucao_id
+            description: Id da execução que reconciliou.
+            data_tests: [not_null]
+          - name: fonte
+            description: Fonte da série.
+            data_tests: [not_null]
+          - name: serie_nome
+            description: Nome da série no catálogo.
+            data_tests: [not_null]
+          - name: linhas_incremental
+            description: Linhas da série no warehouse incremental.
+          - name: linhas_full
+            description: Linhas da série na carga full.
+          - name: so_incremental
+            description: Datas que só existem no incremental (sumiram da fonte).
+          - name: so_full
+            description: Datas que só existem no full (apareceram na fonte fora da margem).
+          - name: valores_diferentes
+            description: Datas presentes nos dois lados com valor diferente (revisão fora da margem).
+          - name: maior_diferenca
+            description: Maior diferença absoluta de valor entre os dois lados.
+          - name: situacao
+            description: "`igual`, `revisao` (registrada, não falha), `estrutural` (falha o run) ou `fora_do_catalogo`."
+            data_tests:
+              - not_null
+              - accepted_values:
+                  arguments:
+                    values: [igual, revisao, estrutural, fora_do_catalogo]
+          - name: detalhe
+            description: Descrição legível da divergência.
+          - name: executado_em
+            description: Instante da reconciliação (timestamptz).
+            data_tests: [not_null]

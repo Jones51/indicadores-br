@@ -38,6 +38,9 @@ uv run dbt docs generate --profiles-dir . --no-compile ; uv run dbt docs serve -
 - `transform/models/staging/` — `stg_<fonte>__<entidade>`, views, só tipagem/renomeação.
 - `transform/models/marts/` — `fct_`/`dim_`, tabelas, regras de negócio.
 - `docs/adr/` — decisões de arquitetura numeradas (`NNNN-titulo.md`).
+- `ci/profiles.yml` — target `prod` usado pela CI (`data/prod.duckdb`).
+- `.github/workflows/dbt_build.yml` — CI: valida PRs; na `main` publica `prod.duckdb` na release
+  `warehouse` e o dbt Docs no GitHub Pages (ADR 0003).
 
 ## Convenções
 

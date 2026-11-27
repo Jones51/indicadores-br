@@ -1,0 +1,83 @@
+name: dbt build & publish
+
+on:
+  push:
+    branches: [main]
+  pull_request:             # valida PRs (build + testes), sem publicar nada
+  schedule:
+    - cron: "17 9 * * 1"    # segundas, 06:17 BRT: dados do BCB atualizados toda semana
+  workflow_dispatch:        # botão "Run workflow" na aba Actions
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # atualizar o asset da release `warehouse`
+    env:
+      DUCKDB_PATH: ${{ github.workspace }}/data/prod.duckdb
+      PUBLICAR: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.4.0
+
+      - name: Instalar dependências
+        run: uv sync --locked
+
+      - name: Lint e testes Python
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run pytest
+
+      - name: Instalar driver DuckDB do dbt (dbc)
+        run: uvx dbc sync --level user
+
+      - name: Ingerir séries do BCB
+        run: uv run indicadores ingest
+
+      - name: dbt build (prod)
+        working-directory: transform
+        run: uv run dbt build --profiles-dir ../ci
+
+      - name: dbt docs (com linhagem por coluna)
+        working-directory: transform
+        run: |
+          uv run dbt compile --profiles-dir ../ci --static-analysis strict --generate-info-schema
+          uv run dbt docs generate --profiles-dir ../ci --no-compile --output-dir "${{ github.workspace }}/site"
+
+      - name: Publicar warehouse na release
+        if: env.PUBLICAR == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view warehouse >/dev/null 2>&1 || \
+            gh release create warehouse --title "warehouse" --latest=false \
+              --notes "Warehouse DuckDB reconstruído automaticamente pelo GitHub Actions a cada push na main e toda segunda-feira."
+          gh release upload warehouse data/prod.duckdb --clobber
+
+      - name: Empacotar site de docs para o Pages
+        if: env.PUBLICAR == 'true'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy-docs:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v5

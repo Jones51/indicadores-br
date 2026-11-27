@@ -355,7 +355,9 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
         cor = `url(#${id})`;
       }
       // .defined() abre um buraco onde o valor é nulo em vez de ligar pontos inexistentes
-      const linha = d3.line().defined((r) => r[s.campo] != null).x((r) => x(r.data)).y((r) => y(r[s.campo])).curve(d3.curveMonotoneX);
+      // séries administradas (ex.: Selic, definida pelo Copom) mudam em degraus: `degrau: true`
+      const curva = s.degrau ? d3.curveStepAfter : d3.curveMonotoneX;
+      const linha = d3.line().defined((r) => r[s.campo] != null).x((r) => x(r.data)).y((r) => y(r[s.campo])).curve(curva);
       svg.append('path').datum(linhas).attr('d', linha).attr('fill', 'none')
         .style('stroke', cor).style('stroke-width', s.largura || 2).style('stroke-linejoin', 'round').style('stroke-linecap', 'round')
         .style('stroke-dasharray', s.tracejado ? '6 4' : null)
@@ -439,7 +441,7 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
   }
 
   const SERIES_JUROS = [
-    {campo: 'selic_meta_aa', nome: 'Selic meta', curto: 'Selic', cor: '#5b8cff', largura: 2.5},
+    {campo: 'selic_meta_aa', nome: 'Selic meta', curto: 'Selic', cor: '#5b8cff', largura: 2.5, degrau: true},
     {campo: 'ipca_12m', nome: 'IPCA 12m', curto: 'IPCA', cor: '#c97f35', largura: 2.5},
     {campo: 'juro_real_ex_post_aa', nome: 'Juro real ex-post', curto: 'Real', cor: '#a274f5', tracejado: true, largura: 2},
   ];

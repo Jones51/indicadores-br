@@ -5,8 +5,11 @@
 ```mermaid
 flowchart LR
     api["API SGS<br/>Banco Central"] -->|httpx| py["src/indicadores<br/>(Python)"]
+    sidra["API SIDRA<br/>IBGE"] -->|httpx| py
     py --> raw[("raw.bcb_sgs<br/>DuckDB")]
+    py --> rawi[("raw.ibge_sidra<br/>DuckDB")]
     raw --> stg["staging<br/>stg_bcb__sgs"]
+    rawi --> stgi["staging<br/>stg_ibge__sidra"]
     stg --> mart["marts<br/>fct_indicadores_mensais"]
     mart --> rel["Release<br/>prod.duckdb"]
     mart --> docs["GitHub Pages<br/>dbt Docs"]
@@ -19,7 +22,8 @@ SGS do Banco Central, modelados com dbt e reconstruídos automaticamente a cada 
 - Publica o site de documentação e o warehouse pronto — aberto a qualquer pessoa, sem credenciais
 - Roda sozinho no GitHub Actions: a cada push na `main` e toda segunda-feira
 
-> **IBGE (SIDRA)** está planejado como segunda fonte — ver [Roadmap](#-roadmap).
+> **IBGE (SIDRA)** já é ingerido até a camada staging (desocupação PNAD e PIB trimestral,
+> [ADR 0004](docs/adr/0004-extrator-ibge-sidra.md)); a junção ao mart está no [Roadmap](#-roadmap).
 
 | O que construí | Como implementei | Onde olhar |
 | --- | --- | --- |
@@ -44,12 +48,16 @@ flowchart LR
     src[("source<br/>raw.bcb_sgs")] --> stg["stg_bcb__sgs<br/>(view)"]
     stg --> fct["fct_indicadores_mensais<br/>(table)"]
     stg -.-> t1{{"assert_stg_bcb_unico_por_serie_data"}}
+    srci[("source<br/>raw.ibge_sidra")] --> stgi["stg_ibge__sidra<br/>(view)"]
+    stgi -.-> t2{{"assert_stg_ibge_unico_por_serie_data"}}
 ```
 
 | Camada | Modelo | Grão | Materialização |
 | --- | --- | --- | --- |
 | Source | `raw.bcb_sgs` | uma linha por (série, data), formato longo | tabela (carga Python) |
+| Source | `raw.ibge_sidra` | uma linha por (série, período), formato longo | tabela (carga Python) |
 | Staging | `stg_bcb__sgs` | uma linha por (série, data), tipada | view |
+| Staging | `stg_ibge__sidra` | uma linha por (série, data), tipada | view |
 | Marts | `fct_indicadores_mensais` | uma linha por mês, uma coluna por indicador | table |
 
 Colunas do mart:
@@ -97,7 +105,7 @@ A cada execução na `main`, o Actions:
 
 1. Instala as dependências com `uv` e o driver DuckDB do dbt com `dbc`
 2. Roda `ruff` e `pytest`
-3. Ingere as séries do BCB (`indicadores ingest`)
+3. Ingere as séries do BCB e do IBGE (`indicadores ingest`)
 4. Roda `dbt build` com o profile de CI (`prod`)
 5. Publica `prod.duckdb` como asset da release [`warehouse`](https://github.com/Jones51/indicadores-br/releases/tag/warehouse)
 6. Gera o dbt Docs e publica no GitHub Pages
@@ -146,7 +154,7 @@ Requer [uv](https://docs.astral.sh/uv/). No PowerShell:
 ```powershell
 uv sync                                   # cria .venv e instala dependências
 uvx dbc sync --level user                 # driver DuckDB 2.x usado pelo dbt v2 (uma vez por máquina)
-uv run indicadores ingest                 # extrai do BCB e carrega em data/warehouse.duckdb
+uv run indicadores ingest                 # extrai do BCB e do IBGE e carrega em data/warehouse.duckdb
 cd transform
 uv run dbt build --profiles-dir .         # modelos + testes (target dev)
 ```
@@ -177,7 +185,18 @@ duckdb -ui -cmd "ATTACH 'data/warehouse.duckdb' AS warehouse (READ_ONLY); USE wa
 | `ipca_12m` | 13522 | % 12 meses | mensal |
 | `dolar_ptax_venda` | 1 | R$/US$ | diária |
 
-Nova série = nova entrada em `SERIES_BCB` ([`config.py`](src/indicadores/config.py)).
+IBGE (SIDRA), nível Brasil. Datas = primeiro dia do último mês do período
+([ADR 0004](docs/adr/0004-extrator-ibge-sidra.md)):
+
+| Nome | Tabela / variável | Unidade | Periodicidade |
+| --- | --- | --- | --- |
+| `desocupacao` | 4099 / 4099 | % | trimestral |
+| `desocupacao_movel` | 6381 / 4099 | % | trimestre móvel (mensal) |
+| `pib_indice_sa` | 1621 / 584 (PIB a preços de mercado) | índice dessaz. (1995=100) | trimestral |
+| `pib_var_interanual` | 5932 / 6561 (PIB a preços de mercado) | % s/ mesmo tri do ano anterior | trimestral |
+
+Nova série = nova entrada em `SERIES_BCB` ou `SERIES_IBGE` ([`config.py`](src/indicadores/config.py)).
+`uv run indicadores ingest --fonte ibge` ingere só uma fonte.
 
 ---
 
@@ -198,7 +217,7 @@ Nova série = nova entrada em `SERIES_BCB` ([`config.py`](src/indicadores/config
 ├── transform/                        # projeto dbt
 │   ├── dbt_project.yml
 │   ├── models/
-│   │   ├── staging/                  # _sources.yml, stg_bcb__sgs (views)
+│   │   ├── staging/                  # _sources.yml, stg_bcb__sgs, stg_ibge__sidra (views)
 │   │   └── marts/                    # fct_indicadores_mensais + testes (tables)
 │   ├── macros/                       # generate_schema_name
 │   └── tests/                        # testes singulares
@@ -212,7 +231,8 @@ Nova série = nova entrada em `SERIES_BCB` ([`config.py`](src/indicadores/config
 - [x] Esqueleto: ingestão BCB, staging, mart mensal, testes
 - [x] Migração para dbt v2 ([ADR 0002](docs/adr/0002-migracao-dbt-v2.md))
 - [x] CI pública + warehouse na release + docs no GitHub Pages
-- [ ] Extrator IBGE (desemprego PNAD, PIB)
+- [x] Extrator IBGE (desemprego PNAD, PIB) até staging ([ADR 0004](docs/adr/0004-extrator-ibge-sidra.md))
+- [ ] IBGE no mart mensal
 - [ ] Ingestão incremental (só baixa o que falta)
 - [ ] Análise: correlação Selic × IPCA com defasagem
 - [ ] Dashboard HTML interativo

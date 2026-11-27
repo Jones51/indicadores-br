@@ -1,10 +1,11 @@
 from datetime import UTC, date, datetime
+from pathlib import Path
 
 import duckdb
 import pytest
 
 from indicadores.config import SerieSGS
-from indicadores.load import DDL_RAW, _migrar_extraido_em, carregar_serie, conectar
+from indicadores.load import DDL_RAW, TABELAS_RAW, _migrar_extraido_em, carregar_serie, conectar
 
 SELIC = SerieSGS(432, "selic_meta", "% a.a.", "diaria")
 IPCA = SerieSGS(433, "ipca_mensal", "% a.m.", "mensal")
@@ -17,10 +18,11 @@ def con(tmp_path):
     con.close()
 
 
-def _tipo_extraido_em(con) -> str:
+def _tipo_extraido_em(con, tabela: str = "bcb_sgs") -> str:
     return con.execute(
         "select data_type from duckdb_columns() "
-        "where schema_name = 'raw' and table_name = 'bcb_sgs' and column_name = 'extraido_em'"
+        "where schema_name = 'raw' and table_name = ? and column_name = 'extraido_em'",
+        [tabela],
     ).fetchone()[0]
 
 
@@ -166,5 +168,29 @@ def test_conectar_migra_banco_existente(tmp_path):
     try:
         assert _tipo_extraido_em(con) == "TIMESTAMP WITH TIME ZONE"
         assert _linhas(con, SELIC) == [(date(2024, 1, 1), 11.75)]
+    finally:
+        con.close()
+
+
+@pytest.mark.parametrize("tabela", TABELAS_RAW)
+def test_toda_tabela_raw_nasce_com_extraido_em_timestamptz(tabela):
+    # Trava o padrão para tabelas raw novas: o freshness do dbt v2 assume UTC em `timestamp`.
+    con = conectar(Path(":memory:"))
+    assert _tipo_extraido_em(con, tabela) == "TIMESTAMP WITH TIME ZONE"
+    con.close()
+
+
+def test_conectar_migra_tabela_ibge_antiga(tmp_path):
+    path = tmp_path / "warehouse.duckdb"
+    antigo = duckdb.connect(str(path))
+    antigo.execute(
+        "create schema raw; create table raw.ibge_sidra (serie_nome varchar, "
+        "extraido_em timestamp not null default current_timestamp)"
+    )
+    antigo.close()
+
+    con = conectar(path)
+    try:
+        assert _tipo_extraido_em(con, "ibge_sidra") == "TIMESTAMP WITH TIME ZONE"
     finally:
         con.close()

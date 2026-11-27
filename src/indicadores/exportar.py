@@ -50,10 +50,35 @@ def ler_meses(con: duckdb.DuckDBPyConnection) -> list[dict[str, Any]]:
     return linhas_para_meses(con.execute(sql).fetchall())
 
 
-def montar_payload(meses: list[dict[str, Any]], gerado_em: datetime) -> dict[str, Any]:
+def ler_ultimas_cargas(con: duckdb.DuckDBPyConnection) -> dict[str, datetime]:
+    """Instante da última carga de cada fonte, de `raw.cargas` (vazio se a tabela não existir).
+
+    Lê `epoch()` em vez do `timestamptz` para não depender do fuso da sessão nem do tzdata.
+    """
+    existe = con.execute(
+        "select count(*) from duckdb_tables() where schema_name = 'raw' and table_name = 'cargas'"
+    ).fetchone()[0]
+    if not existe:
+        return {}
+    linhas = con.execute(
+        "select fonte, epoch(max(executado_em)) from raw.cargas group by fonte order by fonte"
+    ).fetchall()
+    return {fonte: datetime.fromtimestamp(epoch, UTC) for fonte, epoch in linhas}
+
+
+def _iso_utc(instante: datetime) -> str:
+    return instante.astimezone(UTC).isoformat(timespec="seconds")
+
+
+def montar_payload(
+    meses: list[dict[str, Any]],
+    gerado_em: datetime,
+    ultimas_cargas: dict[str, datetime] | None = None,
+) -> dict[str, Any]:
     return {
-        "gerado_em": gerado_em.astimezone(UTC).isoformat(timespec="seconds"),
+        "gerado_em": _iso_utc(gerado_em),
         "fonte": "BCB SGS",
+        "ultimas_cargas": {f: _iso_utc(t) for f, t in sorted((ultimas_cargas or {}).items())},
         "meses": meses,
     }
 
@@ -66,9 +91,10 @@ def exportar(saida: Path | str = SAIDA_PADRAO, db_path: Path | str = DUCKDB_PATH
     con = duckdb.connect(str(db_path), read_only=True)
     try:
         meses = ler_meses(con)
+        ultimas_cargas = ler_ultimas_cargas(con)
     finally:
         con.close()
-    payload = montar_payload(meses, datetime.now(UTC))
+    payload = montar_payload(meses, datetime.now(UTC), ultimas_cargas)
     saida.parent.mkdir(parents=True, exist_ok=True)
     texto = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
     saida.write_text(texto, encoding="utf-8")

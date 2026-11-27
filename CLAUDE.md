@@ -27,7 +27,8 @@ uv run indicadores ingest                      # ingestão INCREMENTAL (todas as
 uv run indicadores ingest --full               # recarga completa desde 2010 (--inicio muda)
 uv run indicadores ingest --series selic_meta  # uma série
 uv run indicadores ingest --fonte ibge         # uma fonte (bcb | ibge)
-uv run indicadores validar --db <arquivo>      # valida um warehouse como estado (sai 1 se inválido)
+uv run indicadores validar --db <arquivo>      # estado: 0 válido, 3 abre mas inválido, 4 corrompido
+uv run indicadores herdar-auditoria --origem <antigo.duckdb>   # copia raw.cargas/reconciliacoes
 uv run indicadores reconciliar --base <inc.duckdb> --full <full.duckdb>   # full vence (sai 2 se estrutural)
 uv run indicadores resumo                      # tabela markdown da última execução em raw.cargas
 cd transform; uv run dbt build --profiles-dir .   # modelos + testes dbt
@@ -84,8 +85,10 @@ uv run dbt docs generate --profiles-dir . --no-compile ; uv run dbt docs serve -
   todo GET passa por `extract/http.py:get_com_retentativas` (4 tentativas, 2s/4s/8s; 4xx não repete).
 - SIDRA incremental: faixa `p/AAAAPP-AAAAPP` (pode terminar num período não divulgado; faixa sem
   dados = só cabeçalho; faixa invertida = 400). O full usa `p/all`.
-- Mudar o schema de uma tabela raw (DDL em `load.py`) torna o `prod.duckdb` publicado "inválido"
-  para `indicadores validar`: o próximo run da CI descarta o estado e faz full (sem backup).
+- Mudar o schema de uma tabela raw (DDL em `load.py`) torna o `prod.duckdb` publicado "inválido
+  como base" para `indicadores validar` (saída 3, o arquivo abre): o próximo run da CI faz full,
+  herda o histórico de auditoria (colunas em comum) e **faz o backup** dele em
+  `prod.anterior.duckdb`. Só arquivo corrompido/ausente (saída 4) fica sem backup.
 - A página de ajuda do SIDRA fica atrás de desafio JS (Cloudflare); para metadados use
   `servicodados.ibge.gov.br/api/v3/agregados/{tabela}/metadados`.
 - DuckDB aceita um só escritor: não rodar ingestão e dbt em paralelo.
@@ -123,6 +126,9 @@ trabalha isolado.
 - Escopo: arquivos que pode tocar e os que **não** pode; o que os outros agentes estão fazendo.
 - Validação obrigatória antes de cada commit (pytest, ruff, `dbt build`).
 - Entrega: push + PR com `gh pr create` + aguardar o CI. **Agente não faz merge.**
+- Force push (`git push --force-with-lease`) só na **própria branch** e **antes de qualquer
+  revisão**. Depois que o PR foi revisado, só commits novos: reescrever o histórico invalida o
+  que o revisor já leu e os comentários ancorados nos commits.
 - Pedir no relatório final: arquivos alterados, decisões tomadas, e o que pode conflitar.
 - Não usar portas fixas compartilhadas (cada um a sua, se precisar de servidor).
 

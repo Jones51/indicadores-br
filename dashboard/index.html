@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Indicadores Econômicos do Brasil</title>
-<meta name="description" content="Selic, IPCA, juro real e dólar PTAX mês a mês, a partir do SGS do Banco Central. Atualizado automaticamente pela CI do projeto indicadores-br.">
+<title>Brazil Economic Indicators</title>
+<meta name="description" content="Selic, IPCA, real interest rate and USD/BRL PTAX month by month, from the Central Bank of Brazil SGS API. Refreshed automatically by the indicadores-br CI.">
 <style>
 :root{
   --bg:#0a0e1c;--fg:#eef1ff;--muted:rgba(214,222,255,.66);--faint:rgba(214,222,255,.46);
@@ -107,15 +107,15 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
 <body>
 <main class="pagina">
   <header>
-    <h1>Indicadores econômicos do Brasil</h1>
-    <p class="lede">Juros, inflação e câmbio mês a mês desde 2010, a partir das séries do <b>SGS do Banco Central</b>, modelados com dbt e recalculados automaticamente toda semana.</p>
+    <h1>Brazil economic indicators</h1>
+    <p class="lede">Interest rates, inflation and the exchange rate month by month since 2010, from the <b>Central Bank of Brazil SGS</b> series, modeled with dbt and refreshed automatically every week.</p>
     <div class="barra">
-      <span class="rotulo" id="rotulo-periodo">Período dos gráficos</span>
+      <span class="rotulo" id="rotulo-periodo">Chart period</span>
       <div class="periodos" role="group" aria-labelledby="rotulo-periodo">
-        <button type="button" data-periodo="1a">1 ano</button>
-        <button type="button" data-periodo="5a">5 anos</button>
-        <button type="button" data-periodo="10a">10 anos</button>
-        <button type="button" data-periodo="tudo">Tudo</button>
+        <button type="button" data-periodo="1a">1 year</button>
+        <button type="button" data-periodo="5a">5 years</button>
+        <button type="button" data-periodo="10a">10 years</button>
+        <button type="button" data-periodo="tudo">All</button>
       </div>
       <span class="intervalo" id="intervalo"></span>
     </div>
@@ -123,27 +123,27 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
 
   <div id="erro" class="vidro erro" role="alert" hidden></div>
 
-  <section class="kpis" aria-label="Indicadores mais recentes">
+  <section class="kpis" aria-label="Latest indicators">
     <article class="vidro kpi" id="kpi-selic">
-      <span class="k">Selic meta</span>
+      <span class="k">Selic target</span>
       <span class="v">—</span>
       <span class="d delta">&nbsp;</span>
       <span class="d ref">&nbsp;</span>
     </article>
     <article class="vidro kpi" id="kpi-ipca">
-      <span class="k">IPCA 12 meses</span>
+      <span class="k">IPCA 12 months</span>
       <span class="v">—</span>
       <span class="d delta">&nbsp;</span>
       <span class="d ref">&nbsp;</span>
     </article>
     <article class="vidro kpi" id="kpi-juro">
-      <span class="k">Juro real ex-post</span>
+      <span class="k">Ex-post real rate</span>
       <span class="v">—</span>
       <span class="d delta">&nbsp;</span>
       <span class="d ref">&nbsp;</span>
     </article>
     <article class="vidro kpi" id="kpi-dolar">
-      <span class="k">Dólar PTAX (média do mês)</span>
+      <span class="k">USD/BRL PTAX (monthly avg.)</span>
       <span class="v">—</span>
       <span class="d delta">&nbsp;</span>
       <span class="d ref">&nbsp;</span>
@@ -151,29 +151,29 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
   </section>
 
   <section class="vidro" aria-labelledby="t-juros">
-    <h2 id="t-juros">Selic × inflação</h2>
-    <p class="sub">Meta Selic no fim de cada mês, IPCA acumulado em 12 meses e o juro real ex-post que resulta deles (% a.a.).</p>
+    <h2 id="t-juros">Selic × inflation</h2>
+    <p class="sub">Selic target at each month end, 12-month accumulated IPCA and the resulting ex-post real interest rate (% p.a.).</p>
     <div class="legenda">
-      <span><i style="border-color:var(--s-selic)"></i>Selic meta</span>
+      <span><i style="border-color:var(--s-selic)"></i>Selic target</span>
       <span><i style="border-color:var(--s-ipca)"></i>IPCA 12m</span>
-      <span><i class="tracejado" style="border-color:var(--s-juro)"></i>Juro real ex-post</span>
+      <span><i class="tracejado" style="border-color:var(--s-juro)"></i>Ex-post real rate</span>
     </div>
     <div class="grafico" id="grafico-juros"></div>
   </section>
 
   <section class="vidro" aria-labelledby="t-dolar">
-    <h2 id="t-dolar">Dólar PTAX</h2>
-    <p class="sub">Média mensal da PTAX venda (R$ por US$). A dica mostra também a cotação do último dia útil do mês.</p>
+    <h2 id="t-dolar">USD/BRL PTAX</h2>
+    <p class="sub">Monthly average of the PTAX selling rate (BRL per USD). The tooltip also shows the rate on the last business day of the month.</p>
     <div class="grafico" id="grafico-dolar"></div>
   </section>
 
   <details class="vidro" id="tabela">
-    <summary>Ver os dados do período em tabela</summary>
+    <summary>Show the period's data as a table</summary>
     <div class="rolagem">
       <table>
         <thead><tr>
-          <th scope="col">Mês</th><th scope="col">Selic meta</th><th scope="col">IPCA mês</th><th scope="col">IPCA 12m</th>
-          <th scope="col">Juro real</th><th scope="col">PTAX média</th><th scope="col">PTAX fim</th>
+          <th scope="col">Month</th><th scope="col">Selic target</th><th scope="col">IPCA month</th><th scope="col">IPCA 12m</th>
+          <th scope="col">Real rate</th><th scope="col">PTAX avg.</th><th scope="col">PTAX month end</th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -181,22 +181,22 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
   </details>
 
   <details class="vidro">
-    <summary>Como cada número é calculado</summary>
+    <summary>How each number is calculated</summary>
     <ul>
-      <li><b>Selic meta:</b> meta da taxa Selic definida pelo Copom e vigente no último dia do mês (SGS 432), em % ao ano.</li>
-      <li><b>IPCA 12 meses:</b> inflação oficial acumulada em 12 meses (SGS 13522). O IPCA de um mês sai só no mês seguinte, por isso o mês mais recente pode ainda não ter inflação.</li>
-      <li><b>Juro real ex-post:</b> Selic meta descontada do IPCA 12m pela equação de Fisher: (1 + Selic) ÷ (1 + IPCA 12m) − 1.</li>
-      <li><b>Dólar PTAX:</b> média das cotações diárias de venda do mês (SGS 1).</li>
-      <li><b>Cartões:</b> cada um mostra o último mês em que aquele indicador tem valor e a variação contra o mesmo mês um ano antes — em pontos percentuais (p.p.) para taxas e em % para o dólar.</li>
-      <li><b>Cores:</b> só a inflação e o dólar ganham cor — vermelho quando sobem, verde quando caem. Selic e juro real ficam neutros: subir ou cair não é bom nem ruim por si só.</li>
+      <li><b>Selic target:</b> the Selic policy rate target set by Copom and in force on the last day of the month (SGS 432), in % per year.</li>
+      <li><b>IPCA 12 months:</b> official inflation accumulated over 12 months (SGS 13522). A month's IPCA is only released the following month, so the most recent month may not have inflation yet.</li>
+      <li><b>Ex-post real rate:</b> Selic target deflated by 12-month IPCA using the Fisher equation: (1 + Selic) ÷ (1 + IPCA 12m) − 1.</li>
+      <li><b>USD/BRL PTAX:</b> average of the month's daily selling rates (SGS 1).</li>
+      <li><b>Cards:</b> each shows the latest month in which that indicator has a value and the change versus the same month a year earlier — in percentage points (pp) for rates and in % for the dollar.</li>
+      <li><b>Colors:</b> only inflation and the dollar are colored — red when they rise, green when they fall. Selic and the real rate stay neutral: rising or falling is neither good nor bad in itself.</li>
     </ul>
   </details>
 
   <footer>
-    <span>Fonte: <a href="https://www3.bcb.gov.br/sgspub" rel="noopener">Banco Central do Brasil — SGS</a> · <span id="gerado-em">gerado em —</span><span id="ultimas-cargas"></span></span>
-    <nav aria-label="Links do projeto">
-      <a href="../">Documentação dbt</a>
-      <a href="https://github.com/Jones51/indicadores-br" rel="noopener">Repositório</a>
+    <span>Source: <a href="https://www3.bcb.gov.br/sgspub" rel="noopener">Central Bank of Brazil — SGS</a> · <span id="gerado-em">generated —</span><span id="ultimas-cargas"></span></span>
+    <nav aria-label="Project links">
+      <a href="../">dbt docs</a>
+      <a href="https://github.com/Jones51/indicadores-br" rel="noopener">Repository</a>
       <a href="https://github.com/Jones51/indicadores-br/releases/tag/warehouse" rel="noopener">Warehouse (DuckDB)</a>
     </nav>
   </footer>
@@ -209,8 +209,8 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
 (() => {
   'use strict';
 
-  // ---------- Formatação pt-BR ----------
-  const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+  // ---------- Formatação (inglês) ----------
+  const MESES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const PERIODOS = {'1a': 12, '5a': 60, '10a': 120, 'tudo': Infinity};
   const PERIODO_PADRAO = '5a';
 
@@ -218,11 +218,11 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
   const mostrarErro = (html) => { erroEl.innerHTML = html; erroEl.hidden = false; };
 
   if (typeof d3 === 'undefined') {
-    mostrarErro('Não foi possível carregar a biblioteca de gráficos (D3) do CDN. Verifique a conexão e recarregue a página.');
+    mostrarErro('Could not load the charting library (D3) from the CDN. Check your connection and reload the page.');
     return;
   }
 
-  const loc = d3.formatLocale({decimal: ',', thousands: '.', grouping: [3], currency: ['R$ ', ''], minus: '−'});
+  const loc = d3.formatLocale({decimal: '.', thousands: ',', grouping: [3], currency: ['R$ ', ''], minus: '−'});
   const f2 = loc.format(',.2f');
   const f4 = loc.format(',.4f');
   const f1 = loc.format(',.1f');
@@ -230,8 +230,8 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
   const pct = (v) => v == null ? '—' : f2(v) + '%';
   const brl = (v, casas = 4) => v == null ? '—' : 'R$ ' + (casas === 2 ? f2(v) : f4(v));
   const sinal = (v) => v > 0 ? '+' : v < 0 ? '−' : '±';
-  const mesTxt = (d) => MESES[d.getMonth()] + '/' + d.getFullYear();
-  const mesCurto = (d) => MESES[d.getMonth()] + '/' + String(d.getFullYear()).slice(2);
+  const mesTxt = (d) => MESES[d.getMonth()] + ' ' + d.getFullYear();
+  const mesCurto = (d) => MESES[d.getMonth()] + ' ’' + String(d.getFullYear()).slice(2);
   const tickData = (d) => d.getMonth() === 0 ? String(d.getFullYear()) : MESES[d.getMonth()];
 
   // "AAAA-MM-DD" -> Date local (evita o deslocamento de fuso de new Date("AAAA-MM-DD"), que é UTC)
@@ -256,9 +256,9 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
   };
 
   const KPIS = [
-    {id: 'kpi-selic', campo: 'selic_meta_aa', unidade: 'a.a.', tipo: 'pp', bomSeSobe: null},
+    {id: 'kpi-selic', campo: 'selic_meta_aa', unidade: 'p.a.', tipo: 'pp', bomSeSobe: null},
     {id: 'kpi-ipca', campo: 'ipca_12m', unidade: '', tipo: 'pp', bomSeSobe: false},
-    {id: 'kpi-juro', campo: 'juro_real_ex_post_aa', unidade: 'a.a.', tipo: 'pp', bomSeSobe: null},
+    {id: 'kpi-juro', campo: 'juro_real_ex_post_aa', unidade: 'p.a.', tipo: 'pp', bomSeSobe: null},
     {id: 'kpi-dolar', campo: 'dolar_ptax_medio', unidade: '', tipo: 'var', bomSeSobe: false},
   ];
 
@@ -267,7 +267,7 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
       const card = document.getElementById(k.id);
       const vEl = card.querySelector('.v'), dEl = card.querySelector('.delta'), rEl = card.querySelector('.ref');
       const atual = ultimoValido(k.campo);
-      if (!atual) { vEl.textContent = '—'; dEl.textContent = 'sem dados'; rEl.innerHTML = '&nbsp;'; continue; }
+      if (!atual) { vEl.textContent = '—'; dEl.textContent = 'no data'; rEl.innerHTML = '&nbsp;'; continue; }
       const v = atual[k.campo];
       const dolar = k.tipo === 'var';
       vEl.textContent = dolar ? brl(v, 2) : pct(v);
@@ -277,17 +277,17 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
       const vAntes = antes ? antes[k.campo] : null;
       dEl.replaceChildren();
       if (vAntes == null || (dolar && !vAntes)) {
-        dEl.textContent = 'sem comparação com 12 meses antes';
+        dEl.textContent = 'no comparison with 12 months earlier';
       } else {
         const delta = dolar ? (v / vAntes - 1) * 100 : v - vAntes;
         const arred = Math.round(delta * 100) / 100;
         const b = document.createElement('b');
         const seta = arred > 0 ? '▲ ' : arred < 0 ? '▼ ' : '';
-        b.textContent = seta + sinal(arred) + f2(Math.abs(arred)) + (dolar ? '%' : ' p.p.');
+        b.textContent = seta + sinal(arred) + f2(Math.abs(arred)) + (dolar ? '%' : ' pp');
         if (k.bomSeSobe !== null && arred !== 0) b.className = (arred > 0) === k.bomSeSobe ? 'bom' : 'ruim';
-        dEl.append(b, ' em 12 meses · era ' + (dolar ? brl(vAntes, 2) : pct(vAntes)));
+        dEl.append(b, ' in 12 months · was ' + (dolar ? brl(vAntes, 2) : pct(vAntes)));
       }
-      rEl.textContent = 'Referência: ' + mesTxt(atual.data);
+      rEl.textContent = 'Reference: ' + mesTxt(atual.data);
       card.setAttribute('aria-label', card.querySelector('.k').textContent + ': ' + vEl.textContent + '. ' + dEl.textContent + '. ' + rEl.textContent);
     }
   }
@@ -298,7 +298,7 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
     el.replaceChildren();
     const valores = linhas.flatMap((r) => series.map((s) => r[s.campo])).filter((v) => v != null);
     if (!linhas.length || !valores.length) {
-      el.innerHTML = '<div class="vazio">Sem dados no período.</div>';
+      el.innerHTML = '<div class="vazio">No data in this period.</div>';
       return;
     }
     const W = Math.max(280, el.clientWidth || 600);
@@ -313,7 +313,7 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
 
     const svg = d3.select(el).append('svg').attr('width', W).attr('height', H)
       .attr('role', 'img').attr('tabindex', 0)
-      .attr('aria-label', el.dataset.titulo + '. Use as setas para percorrer os meses.');
+      .attr('aria-label', el.dataset.titulo + '. Use the arrow keys to move through the months.');
 
     // eixo y: mede os rótulos para dimensionar a margem esquerda
     const gy = svg.append('g').call(d3.axisLeft(y).ticks(5).tickFormat(fmtEixo).tickSize(0).tickPadding(0));
@@ -405,7 +405,7 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
         const n = l.append('span');
         n.append('i').style('background', s.degrade ? 'linear-gradient(90deg,#5b8cff,#a77bff)' : s.cor);
         n.append('span').text(s.nome);
-        l.append('span').text(r[s.campo] == null ? 'sem dado' : fmt(r[s.campo]));
+        l.append('span').text(r[s.campo] == null ? 'no data' : fmt(r[s.campo]));
       }
       if (extrasDica) for (const [nome, valor] of extrasDica(r)) {
         const l = dica.append('div').attr('class', 'l');
@@ -441,24 +441,24 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
   }
 
   const SERIES_JUROS = [
-    {campo: 'selic_meta_aa', nome: 'Selic meta', curto: 'Selic', cor: '#5b8cff', largura: 2.5, degrau: true},
+    {campo: 'selic_meta_aa', nome: 'Selic target', curto: 'Selic', cor: '#5b8cff', largura: 2.5, degrau: true},
     {campo: 'ipca_12m', nome: 'IPCA 12m', curto: 'IPCA', cor: '#c97f35', largura: 2.5},
-    {campo: 'juro_real_ex_post_aa', nome: 'Juro real ex-post', curto: 'Real', cor: '#a274f5', tracejado: true, largura: 2},
+    {campo: 'juro_real_ex_post_aa', nome: 'Ex-post real rate', curto: 'Real', cor: '#a274f5', tracejado: true, largura: 2},
   ];
 
   function desenharGraficos() {
     const linhas = linhasDoPeriodo();
     const elJ = document.getElementById('grafico-juros');
-    elJ.dataset.titulo = 'Selic meta, IPCA 12 meses e juro real ex-post, em % ao ano';
+    elJ.dataset.titulo = 'Selic target, 12-month IPCA and ex-post real interest rate, in % per year';
     graficoLinhas(elJ, linhas, {
       series: SERIES_JUROS, fmt: pct, fmtEixo: (v) => f0(v) + '%', incluirZero: true, rotular: true,
     });
     const elD = document.getElementById('grafico-dolar');
-    elD.dataset.titulo = 'Dólar PTAX venda, média mensal em reais';
+    elD.dataset.titulo = 'USD/BRL PTAX selling rate, monthly average in reais';
     graficoLinhas(elD, linhas, {
-      series: [{campo: 'dolar_ptax_medio', nome: 'Média do mês', cor: '#5b8cff', degrade: true, brilho: true, largura: 2.5}],
+      series: [{campo: 'dolar_ptax_medio', nome: 'Monthly avg.', cor: '#5b8cff', degrade: true, brilho: true, largura: 2.5}],
       fmt: (v) => brl(v), fmtEixo: (v) => 'R$ ' + f1(v), incluirZero: false, rotular: false,
-      extrasDica: (r) => [['Fim do mês', brl(r.dolar_ptax_fim_mes)]],
+      extrasDica: (r) => [['Month end', brl(r.dolar_ptax_fim_mes)]],
     });
 
     const intervalo = document.getElementById('intervalo');
@@ -504,26 +504,26 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
         .map((m) => ({...m, data: paraData(m.mes_referencia)}))
         .sort((a, b) => a.data - b.data);
       porMes = new Map(MESES_DADOS.map((m) => [chaveMes(m.data), m]));
-      const fmtBrasilia = new Intl.DateTimeFormat('pt-BR', {dateStyle: 'long', timeStyle: 'short', timeZone: 'America/Sao_Paulo'});
+      const fmtBrasilia = new Intl.DateTimeFormat('en-US', {dateStyle: 'long', timeStyle: 'short', timeZone: 'America/Sao_Paulo'});
       if (dados.gerado_em) {
-        document.getElementById('gerado-em').textContent = 'gerado em ' + fmtBrasilia.format(new Date(dados.gerado_em)) + ' (horário de Brasília)';
+        document.getElementById('gerado-em').textContent = 'generated ' + fmtBrasilia.format(new Date(dados.gerado_em)) + ' (Brasília time)';
       }
       // Última carga por fonte, de raw.cargas (ADR 0006). Ausente em JSONs antigos: não mostra nada.
       const NOMES_FONTES = {bcb: 'BCB', ibge: 'IBGE'};
       const cargas = Object.entries(dados.ultimas_cargas || {})
         .filter(([, quando]) => !Number.isNaN(new Date(quando).getTime()))
-        .map(([fonte, quando]) => (NOMES_FONTES[fonte] || fonte) + ' em ' + fmtBrasilia.format(new Date(quando)));
+        .map(([fonte, quando]) => (NOMES_FONTES[fonte] || fonte) + ' on ' + fmtBrasilia.format(new Date(quando)));
       if (cargas.length) {
-        document.getElementById('ultimas-cargas').textContent = ' · última carga: ' + cargas.join(', ');
+        document.getElementById('ultimas-cargas').textContent = ' · last load: ' + cargas.join(', ');
       }
       desenharKpis();
       aplicarPeriodo(periodo, false);
     })
     .catch((e) => {
       console.error(e);
-      mostrarErro('Não foi possível carregar <code>dados.json</code> (' + String(e.message).replace(/[<>&]/g, '') + '). '
-        + 'Abrindo o arquivo direto do disco, o navegador bloqueia a leitura: gere o JSON com '
-        + '<code>uv run indicadores exportar</code> e sirva a pasta com <code>uv run python -m http.server -d dashboard</code>.');
+      mostrarErro('Could not load <code>dados.json</code> (' + String(e.message).replace(/[<>&]/g, '') + '). '
+        + 'When the file is opened straight from disk the browser blocks the request: generate the JSON with '
+        + '<code>uv run indicadores exportar</code> and serve the folder with <code>uv run python -m http.server -d dashboard</code>.');
     });
 })();
 </script>

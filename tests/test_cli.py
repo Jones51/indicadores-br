@@ -15,13 +15,37 @@ def _rodar(monkeypatch, *args):
     cli.main()
 
 
-def test_validar_sai_com_1_em_estado_invalido(monkeypatch, tmp_path, capsys):
+def test_validar_sai_com_4_em_arquivo_corrompido(monkeypatch, tmp_path, capsys):
     lixo = tmp_path / "prod.duckdb"
     lixo.write_bytes(b"nao e duckdb")
     with pytest.raises(SystemExit) as saida:
         _rodar(monkeypatch, "validar", "--db", str(lixo))
-    assert saida.value.code == 1
-    assert "[inválido]" in capsys.readouterr().out
+    assert saida.value.code == cli.SAIDA_CORROMPIDO == 4
+    assert "[corrompido]" in capsys.readouterr().out
+
+
+def test_validar_sai_com_3_quando_abre_mas_e_invalido(monkeypatch, tmp_path, capsys):
+    caminho = tmp_path / "prod.duckdb"
+    conectar(caminho).close()
+    con = duckdb.connect(str(caminho))
+    con.execute("alter table raw.bcb_sgs add column fonte_nova varchar")  # schema "do futuro"
+    con.close()
+    with pytest.raises(SystemExit) as saida:
+        _rodar(monkeypatch, "validar", "--db", str(caminho))
+    assert saida.value.code == cli.SAIDA_INVALIDO == 3
+    assert "[inválido] raw.bcb_sgs com schema diferente" in capsys.readouterr().out
+
+
+def test_herdar_auditoria_pela_cli(monkeypatch, tmp_path, capsys):
+    origem, destino = tmp_path / "antigo.duckdb", tmp_path / "novo.duckdb"
+    con = conectar(origem)
+    con.execute(
+        "insert into raw.cargas values ('r1', 'bcb', 'selic_meta', 'full', 'sem_dados', "
+        "date '2010-01-01', null, date '2024-01-01', 1, 0, 1, 0.1, now())"
+    )
+    con.close()
+    _rodar(monkeypatch, "herdar-auditoria", "--origem", str(origem), "--db", str(destino))
+    assert "[auditoria] raw.cargas: 1 linhas copiadas" in capsys.readouterr().out
 
 
 def test_validar_sai_com_0_em_estado_valido(monkeypatch, tmp_path, capsys):

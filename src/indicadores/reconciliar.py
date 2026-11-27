@@ -16,8 +16,8 @@ A comparação é série a série (contagem, min/max de data, soma) e linha a li
 - `fora_do_catalogo`: série só existe no incremental e saiu do catálogo; o full a descarta.
 
 O histórico de auditoria (`raw.cargas`, `raw.reconciliacoes`) vive no warehouse publicado, então
-o banco full (recém-criado) herda o histórico do incremental, e o resultado da reconciliação é
-gravado nele.
+o banco full (recém-criado) herda o histórico do incremental (`auditoria.herdar_auditoria`,
+tolerante a schema diferente), e o resultado da reconciliação é gravado nele.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from pathlib import Path
 
 import duckdb
 
+from indicadores.auditoria import herdar_auditoria
 from indicadores.load import conectar, transacao
 
 TOLERANCIA = 1e-9  # diferença de valor abaixo disso é ruído de float, não revisão
@@ -163,31 +164,6 @@ def comparar(con: duckdb.DuckDBPyConnection, catalogo: Iterable[str]) -> list[Co
     return comparacoes
 
 
-def _herdar_auditoria(con: duckdb.DuckDBPyConnection) -> None:
-    """Copia para o full o histórico de auditoria do incremental que ele ainda não tem."""
-    chaves = {
-        "cargas": ("execucao_id", "serie_nome", "modo"),
-        "reconciliacoes": ("execucao_id", "serie_nome"),
-    }
-    existentes = {
-        t
-        for (t,) in con.execute(
-            "select table_name from duckdb_tables() where database_name = ? "
-            "and schema_name = 'raw'",
-            [ALIAS_BASE],
-        ).fetchall()
-    }
-    for tabela, chave in chaves.items():
-        if tabela not in existentes:
-            continue
-        igualdade = " and ".join(f"b.{c} = f.{c}" for c in chave)
-        con.execute(
-            f"insert into raw.{tabela} by name "
-            f"select b.* from {ALIAS_BASE}.raw.{tabela} as b "
-            f"where not exists (select 1 from raw.{tabela} as f where {igualdade})"
-        )
-
-
 def gravar(con: duckdb.DuckDBPyConnection, execucao_id: str, comparacoes: list[Comparacao]) -> None:
     colunas = ["execucao_id", *(f.name for f in fields(Comparacao))]
     marcadores = ", ".join("?" for _ in colunas)
@@ -207,7 +183,10 @@ def _fmt(v) -> str:
 
 
 def relatorio_markdown(
-    execucao_id: str, comparacoes: list[Comparacao], exemplos: list[tuple]
+    execucao_id: str,
+    comparacoes: list[Comparacao],
+    exemplos: list[tuple],
+    auditoria: Iterable[str] = (),
 ) -> str:
     estruturais = [c for c in comparacoes if c.situacao == "estrutural"]
     revisoes = [c for c in comparacoes if c.situacao == "revisao"]
@@ -251,6 +230,9 @@ def relatorio_markdown(
         saida += [
             f"| {f} | `{s}` | {d} | {_fmt(vi)} | {_fmt(vf)} |" for f, s, d, vi, vf in exemplos
         ]
+    if auditoria := list(auditoria):
+        saida += ["", "Auditoria herdada do incremental:", ""]
+        saida += [f"- {mensagem}" for mensagem in auditoria]
     return "\n".join(saida) + "\n"
 
 
@@ -282,10 +264,10 @@ def reconciliar(
             execucao_id = linha[0] if linha else "sem-execucao"
         comparacoes = comparar(con, catalogo)
         exemplos = con.execute(SQL_EXEMPLOS, [max_exemplos]).fetchall()
+        auditoria = herdar_auditoria(con, ALIAS_BASE)  # transação própria; nunca levanta
         with transacao(con):
-            _herdar_auditoria(con)
             gravar(con, execucao_id, comparacoes)
         con.execute(f"detach {ALIAS_BASE}")
     finally:
         con.close()
-    return comparacoes, relatorio_markdown(execucao_id, comparacoes, exemplos)
+    return comparacoes, relatorio_markdown(execucao_id, comparacoes, exemplos, auditoria)

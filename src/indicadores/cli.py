@@ -53,15 +53,30 @@ def cmd_ingest(args: argparse.Namespace) -> None:
         con.close()
 
 
-def cmd_validar(args: argparse.Namespace) -> None:
-    from indicadores.estado import validar_estado
+# Códigos de saída de `validar`, distintos de 1 (exceção do Python) e 2 (erro do argparse) para
+# que a CI nunca confunda uma falha inesperada com um diagnóstico.
+SAIDA_INVALIDO = 3  # abre no DuckDB, mas não serve de base incremental: ainda vale como backup
+SAIDA_CORROMPIDO = 4  # não existe ou não abre no DuckDB: nem base, nem backup
 
-    problemas = validar_estado(args.db)
-    if problemas:
-        for problema in problemas:
-            print(f"[inválido] {problema}")
-        raise SystemExit(1)
-    print(f"[ok] estado válido: {args.db}")
+
+def cmd_validar(args: argparse.Namespace) -> None:
+    from indicadores.estado import diagnosticar_estado
+
+    diagnostico = diagnosticar_estado(args.db)
+    if diagnostico.valido:
+        print(f"[ok] estado válido: {args.db}")
+        return
+    rotulo = "inválido" if diagnostico.abre else "corrompido"
+    for problema in diagnostico.problemas:
+        print(f"[{rotulo}] {problema}")
+    raise SystemExit(SAIDA_INVALIDO if diagnostico.abre else SAIDA_CORROMPIDO)
+
+
+def cmd_herdar_auditoria(args: argparse.Namespace) -> None:
+    from indicadores.auditoria import herdar_auditoria_de_arquivo
+
+    for mensagem in herdar_auditoria_de_arquivo(args.origem, args.db):
+        print(f"[auditoria] {mensagem}")
 
 
 def cmd_reconciliar(args: argparse.Namespace) -> None:
@@ -128,10 +143,22 @@ def main() -> None:
     p_ingest.set_defaults(func=cmd_ingest)
 
     p_validar = sub.add_parser(
-        "validar", help="Valida um warehouse como estado inicial (sai com 1 se inválido)"
+        "validar",
+        help=(
+            f"Valida um warehouse como estado inicial (0 = válido, {SAIDA_INVALIDO} = abre mas "
+            f"é inválido, {SAIDA_CORROMPIDO} = não abre)"
+        ),
     )
     p_validar.add_argument("--db", default=db_padrao, help="Warehouse a validar")
     p_validar.set_defaults(func=cmd_validar)
+
+    p_herdar = sub.add_parser(
+        "herdar-auditoria",
+        help="Copia o histórico de raw.cargas/raw.reconciliacoes de outro warehouse (tolerante)",
+    )
+    p_herdar.add_argument("--origem", required=True, help="Warehouse de onde copiar (só leitura)")
+    p_herdar.add_argument("--db", default=db_padrao, help="Warehouse que recebe o histórico")
+    p_herdar.set_defaults(func=cmd_herdar_auditoria)
 
     p_rec = sub.add_parser(
         "reconciliar",

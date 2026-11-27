@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Indicadores Econômicos do Brasil</title>
+<meta name="description" content="Selic, IPCA, juro real e dólar PTAX mês a mês, a partir do SGS do Banco Central. Atualizado automaticamente pela CI do projeto indicadores-br.">
+<style>
+:root{
+  --bg:#0a0e1c;--fg:#eef1ff;--muted:rgba(214,222,255,.66);--faint:rgba(214,222,255,.46);
+  --line:rgba(255,255,255,.08);--glass-b:rgba(255,255,255,.10);
+  --blue:#5b8cff;--violet:#a77bff;--ok:#6ee7b7;--bad:#fb7185;
+  /* séries do gráfico de juros: paleta validada para daltonismo sobre a superfície escura */
+  --s-selic:#5b8cff;--s-ipca:#c97f35;--s-juro:#a274f5;
+  --fs-caption:12.5px;--fs-body:15px;--fs-heading:18px;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{
+  background-color:var(--bg);
+  background:
+    radial-gradient(1100px 620px at 8% -12%,rgba(91,140,255,.28),transparent 62%),
+    radial-gradient(900px 620px at 102% 4%,rgba(167,123,255,.24),transparent 60%),
+    radial-gradient(900px 600px at 50% 112%,rgba(76,110,245,.16),transparent 62%),
+    linear-gradient(180deg,#0b1022 0%,#0a0d1a 100%);
+  background-attachment:fixed;
+  color:var(--fg);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  font-size:var(--fs-body);line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:#b9c6ff}
+a:hover{color:#fff}
+.pagina{max-width:1180px;margin:0 auto;padding:clamp(16px,3vw,36px);display:flex;flex-direction:column;gap:clamp(18px,2.4vw,28px)}
+h1{font-weight:600;font-size:clamp(26px,3.4vw,38px);letter-spacing:-.02em;margin:0;line-height:1.15;
+  background:linear-gradient(90deg,#ffffff 0%,#c9d6ff 45%,#c4a8ff 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.lede{margin:10px 0 0;color:var(--muted);max-width:76ch}
+.lede b{color:var(--fg);font-weight:600}
+.barra{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin-top:18px}
+.barra .rotulo{font-size:var(--fs-caption);color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.periodos{display:inline-flex;padding:3px;gap:2px;border-radius:12px;background:rgba(255,255,255,.05);border:1px solid var(--glass-b)}
+.periodos button{font:inherit;font-size:14px;color:var(--muted);background:transparent;border:0;border-radius:9px;padding:6px 14px;min-height:34px;cursor:pointer;transition:background .15s,color .15s}
+.periodos button:hover{color:var(--fg)}
+.periodos button[aria-pressed=true]{color:#fff;background:linear-gradient(90deg,rgba(91,140,255,.45),rgba(167,123,255,.38));box-shadow:inset 0 1px 0 rgba(255,255,255,.18)}
+.periodos button:focus-visible,.grafico svg:focus-visible,summary:focus-visible{outline:2px solid #b9c6ff;outline-offset:2px}
+.barra .intervalo{font-size:var(--fs-caption);color:var(--faint);font-variant-numeric:tabular-nums}
+
+.vidro{position:relative;background:linear-gradient(160deg,rgba(255,255,255,.075) 0%,rgba(255,255,255,.025) 100%);border:1px solid var(--glass-b);border-radius:18px;
+  backdrop-filter:blur(16px) saturate(140%);-webkit-backdrop-filter:blur(16px) saturate(140%);
+  box-shadow:0 10px 40px rgba(3,6,20,.45),inset 0 1px 0 rgba(255,255,255,.10);overflow:hidden}
+.vidro::before{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(420px 160px at 0% 0%,rgba(140,170,255,.13),transparent 70%)}
+.vidro>*{position:relative}
+section.vidro{padding:clamp(16px,2.2vw,24px)}
+
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:14px}
+.kpi{padding:18px 20px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.kpi::after{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,var(--blue),var(--violet));opacity:.85}
+.kpi .k{font-size:var(--fs-caption);color:var(--muted);text-transform:uppercase;letter-spacing:.07em;line-height:1.35}
+.kpi .v{font-weight:600;font-size:clamp(30px,3.4vw,42px);letter-spacing:-.025em;line-height:1.1;font-variant-numeric:tabular-nums;
+  background:linear-gradient(90deg,#ffffff,#d5ddff 55%,#cdb6ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+.kpi .v small{font-size:.45em;letter-spacing:0;margin-left:4px;font-weight:500}
+.kpi .d{font-size:var(--fs-caption);color:var(--faint);font-variant-numeric:tabular-nums}
+.kpi .d b{font-weight:600;color:var(--muted)}
+.kpi .d b.bom{color:var(--ok)}
+.kpi .d b.ruim{color:var(--bad)}
+
+h2{font-size:var(--fs-heading);font-weight:600;letter-spacing:-.01em;margin:0 0 4px}
+.sub{margin:0 0 14px;color:var(--muted);font-size:var(--fs-caption)}
+.legenda{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:var(--fs-caption);color:var(--muted);margin-bottom:8px;align-items:center}
+.legenda i{display:inline-block;width:20px;height:0;border-top:3px solid;border-radius:2px;margin-right:6px;vertical-align:3px}
+.legenda i.tracejado{border-top-style:dashed}
+.legenda i.degrade{border:0;height:4px;background:linear-gradient(90deg,var(--blue),var(--violet))}
+.grafico{position:relative;min-height:240px;touch-action:pan-y}
+.grafico svg{display:block;overflow:visible}
+.grafico .tick text{fill:var(--faint);font-size:var(--fs-caption);font-variant-numeric:tabular-nums}
+.grafico .tick line{stroke:none}
+.dica{position:absolute;top:8px;pointer-events:none;background:rgba(16,21,42,.9);border:1px solid rgba(255,255,255,.14);box-shadow:0 12px 30px rgba(0,0,0,.45);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-radius:10px;padding:8px 12px;font-size:var(--fs-caption);white-space:nowrap;z-index:2;font-variant-numeric:tabular-nums}
+.dica .h{font-weight:600;margin-bottom:3px}
+.dica .l{display:flex;align-items:center;gap:8px;justify-content:space-between}
+.dica .l span:first-child{color:var(--muted)}
+.dica .l i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:0}
+.vazio{color:var(--muted);font-size:var(--fs-caption);padding:40px 0;text-align:center}
+
+details.vidro{padding:14px 20px;font-size:var(--fs-caption);color:var(--muted)}
+details summary{cursor:pointer;color:var(--fg);font-size:14px}
+details li{margin:6px 0}
+details b{color:var(--fg)}
+.rolagem{overflow-x:auto;margin-top:12px;max-height:420px;overflow-y:auto}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;font-size:13px}
+th{font-weight:500;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;font-size:11.5px;text-align:right;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;position:sticky;top:0;background:#121831}
+td{padding:7px 10px;text-align:right;border-bottom:1px solid rgba(255,255,255,.05);white-space:nowrap;color:rgba(238,241,255,.88)}
+th:first-child,td:first-child{text-align:left}
+
+.erro{border-color:rgba(251,113,133,.45);color:var(--fg);padding:16px 20px}
+.erro code{color:#ffd1d9}
+footer{font-size:var(--fs-caption);color:var(--faint);display:flex;flex-wrap:wrap;gap:6px 18px;justify-content:space-between;padding:4px 2px 8px}
+footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
+@media (max-width:520px){
+  .kpi{padding:14px 16px}
+  .periodos button{padding:6px 11px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<main class="pagina">
+  <header>
+    <h1>Indicadores econômicos do Brasil</h1>
+    <p class="lede">Juros, inflação e câmbio mês a mês desde 2010, a partir das séries do <b>SGS do Banco Central</b>, modelados com dbt e recalculados automaticamente toda semana.</p>
+    <div class="barra">
+      <span class="rotulo" id="rotulo-periodo">Período dos gráficos</span>
+      <div class="periodos" role="group" aria-labelledby="rotulo-periodo">
+        <button type="button" data-periodo="1a">1 ano</button>
+        <button type="button" data-periodo="5a">5 anos</button>
+        <button type="button" data-periodo="10a">10 anos</button>
+        <button type="button" data-periodo="tudo">Tudo</button>
+      </div>
+      <span class="intervalo" id="intervalo"></span>
+    </div>
+  </header>
+
+  <div id="erro" class="vidro erro" role="alert" hidden></div>
+
+  <section class="kpis" aria-label="Indicadores mais recentes">
+    <article class="vidro kpi" id="kpi-selic">
+      <span class="k">Selic meta</span>
+      <span class="v">—</span>
+      <span class="d delta">&nbsp;</span>
+      <span class="d ref">&nbsp;</span>
+    </article>
+    <article class="vidro kpi" id="kpi-ipca">
+      <span class="k">IPCA 12 meses</span>
+      <span class="v">—</span>
+      <span class="d delta">&nbsp;</span>
+      <span class="d ref">&nbsp;</span>
+    </article>
+    <article class="vidro kpi" id="kpi-juro">
+      <span class="k">Juro real ex-post</span>
+      <span class="v">—</span>
+      <span class="d delta">&nbsp;</span>
+      <span class="d ref">&nbsp;</span>
+    </article>
+    <article class="vidro kpi" id="kpi-dolar">
+      <span class="k">Dólar PTAX (média do mês)</span>
+      <span class="v">—</span>
+      <span class="d delta">&nbsp;</span>
+      <span class="d ref">&nbsp;</span>
+    </article>
+  </section>
+
+  <section class="vidro" aria-labelledby="t-juros">
+    <h2 id="t-juros">Selic × inflação</h2>
+    <p class="sub">Meta Selic no fim de cada mês, IPCA acumulado em 12 meses e o juro real ex-post que resulta deles (% a.a.).</p>
+    <div class="legenda">
+      <span><i style="border-color:var(--s-selic)"></i>Selic meta</span>
+      <span><i style="border-color:var(--s-ipca)"></i>IPCA 12m</span>
+      <span><i class="tracejado" style="border-color:var(--s-juro)"></i>Juro real ex-post</span>
+    </div>
+    <div class="grafico" id="grafico-juros"></div>
+  </section>
+
+  <section class="vidro" aria-labelledby="t-dolar">
+    <h2 id="t-dolar">Dólar PTAX</h2>
+    <p class="sub">Média mensal da PTAX venda (R$ por US$). A dica mostra também a cotação do último dia útil do mês.</p>
+    <div class="grafico" id="grafico-dolar"></div>
+  </section>
+
+  <details class="vidro" id="tabela">
+    <summary>Ver os dados do período em tabela</summary>
+    <div class="rolagem">
+      <table>
+        <thead><tr>
+          <th scope="col">Mês</th><th scope="col">Selic meta</th><th scope="col">IPCA mês</th><th scope="col">IPCA 12m</th>
+          <th scope="col">Juro real</th><th scope="col">PTAX média</th><th scope="col">PTAX fim</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </details>
+
+  <details class="vidro">
+    <summary>Como cada número é calculado</summary>
+    <ul>
+      <li><b>Selic meta:</b> meta da taxa Selic definida pelo Copom e vigente no último dia do mês (SGS 432), em % ao ano.</li>
+      <li><b>IPCA 12 meses:</b> inflação oficial acumulada em 12 meses (SGS 13522). O IPCA de um mês sai só no mês seguinte, por isso o mês mais recente pode ainda não ter inflação.</li>
+      <li><b>Juro real ex-post:</b> Selic meta descontada do IPCA 12m pela equação de Fisher: (1 + Selic) ÷ (1 + IPCA 12m) − 1.</li>
+      <li><b>Dólar PTAX:</b> média das cotações diárias de venda do mês (SGS 1).</li>
+      <li><b>Cartões:</b> cada um mostra o último mês em que aquele indicador tem valor e a variação contra o mesmo mês um ano antes — em pontos percentuais (p.p.) para taxas e em % para o dólar.</li>
+      <li><b>Cores:</b> só a inflação e o dólar ganham cor — vermelho quando sobem, verde quando caem. Selic e juro real ficam neutros: subir ou cair não é bom nem ruim por si só.</li>
+    </ul>
+  </details>
+
+  <footer>
+    <span>Fonte: <a href="https://www3.bcb.gov.br/sgspub" rel="noopener">Banco Central do Brasil — SGS</a> · <span id="gerado-em">gerado em —</span></span>
+    <nav aria-label="Links do projeto">
+      <a href="../">Documentação dbt</a>
+      <a href="https://github.com/Jones51/indicadores-br" rel="noopener">Repositório</a>
+      <a href="https://github.com/Jones51/indicadores-br/releases/tag/warehouse" rel="noopener">Warehouse (DuckDB)</a>
+    </nav>
+  </footer>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"
+  integrity="sha512-vc58qvvBdrDR4etbxMdlTt4GBQk1qjvyORR2nrsPsFPyrs+/u5c3+1Ct6upOgdZoIl7eq6k3a1UPDSNAQi/32A=="
+  crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script>
+(() => {
+  'use strict';
+
+  // ---------- Formatação pt-BR ----------
+  const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+  const PERIODOS = {'1a': 12, '5a': 60, '10a': 120, 'tudo': Infinity};
+  const PERIODO_PADRAO = '5a';
+
+  const erroEl = document.getElementById('erro');
+  const mostrarErro = (html) => { erroEl.innerHTML = html; erroEl.hidden = false; };
+
+  if (typeof d3 === 'undefined') {
+    mostrarErro('Não foi possível carregar a biblioteca de gráficos (D3) do CDN. Verifique a conexão e recarregue a página.');
+    return;
+  }
+
+  const loc = d3.formatLocale({decimal: ',', thousands: '.', grouping: [3], currency: ['R$ ', ''], minus: '−'});
+  const f2 = loc.format(',.2f');
+  const f4 = loc.format(',.4f');
+  const f1 = loc.format(',.1f');
+  const f0 = loc.format(',.0f');
+  const pct = (v) => v == null ? '—' : f2(v) + '%';
+  const brl = (v, casas = 4) => v == null ? '—' : 'R$ ' + (casas === 2 ? f2(v) : f4(v));
+  const sinal = (v) => v > 0 ? '+' : v < 0 ? '−' : '±';
+  const mesTxt = (d) => MESES[d.getMonth()] + '/' + d.getFullYear();
+  const mesCurto = (d) => MESES[d.getMonth()] + '/' + String(d.getFullYear()).slice(2);
+  const tickData = (d) => d.getMonth() === 0 ? String(d.getFullYear()) : MESES[d.getMonth()];
+
+  // "AAAA-MM-DD" -> Date local (evita o deslocamento de fuso de new Date("AAAA-MM-DD"), que é UTC)
+  const paraData = (s) => { const [a, m, d] = s.split('-').map(Number); return new Date(a, m - 1, d || 1); };
+  const chaveMes = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  const somarMeses = (d, n) => new Date(d.getFullYear(), d.getMonth() + n, 1);
+
+  // ---------- Estado ----------
+  let MESES_DADOS = [];   // [{data: Date, selic_meta_aa, ...}] em ordem cronológica
+  let porMes = new Map(); // "AAAA-MM" -> linha
+  let periodo = PERIODO_PADRAO;
+
+  const lerPeriodoDaUrl = () => {
+    const h = decodeURIComponent(location.hash.replace(/^#/, ''));
+    return Object.hasOwn(PERIODOS, h) ? h : PERIODO_PADRAO;
+  };
+
+  // ---------- KPIs ----------
+  const ultimoValido = (campo) => {
+    for (let i = MESES_DADOS.length - 1; i >= 0; i--) if (MESES_DADOS[i][campo] != null) return MESES_DADOS[i];
+    return null;
+  };
+
+  const KPIS = [
+    {id: 'kpi-selic', campo: 'selic_meta_aa', unidade: 'a.a.', tipo: 'pp', bomSeSobe: null},
+    {id: 'kpi-ipca', campo: 'ipca_12m', unidade: '', tipo: 'pp', bomSeSobe: false},
+    {id: 'kpi-juro', campo: 'juro_real_ex_post_aa', unidade: 'a.a.', tipo: 'pp', bomSeSobe: null},
+    {id: 'kpi-dolar', campo: 'dolar_ptax_medio', unidade: '', tipo: 'var', bomSeSobe: false},
+  ];
+
+  function desenharKpis() {
+    for (const k of KPIS) {
+      const card = document.getElementById(k.id);
+      const vEl = card.querySelector('.v'), dEl = card.querySelector('.delta'), rEl = card.querySelector('.ref');
+      const atual = ultimoValido(k.campo);
+      if (!atual) { vEl.textContent = '—'; dEl.textContent = 'sem dados'; rEl.innerHTML = '&nbsp;'; continue; }
+      const v = atual[k.campo];
+      const dolar = k.tipo === 'var';
+      vEl.textContent = dolar ? brl(v, 2) : pct(v);
+      if (k.unidade) { const s = document.createElement('small'); s.textContent = k.unidade; vEl.appendChild(s); }
+
+      const antes = porMes.get(chaveMes(somarMeses(atual.data, -12)));
+      const vAntes = antes ? antes[k.campo] : null;
+      dEl.replaceChildren();
+      if (vAntes == null || (dolar && !vAntes)) {
+        dEl.textContent = 'sem comparação com 12 meses antes';
+      } else {
+        const delta = dolar ? (v / vAntes - 1) * 100 : v - vAntes;
+        const arred = Math.round(delta * 100) / 100;
+        const b = document.createElement('b');
+        const seta = arred > 0 ? '▲ ' : arred < 0 ? '▼ ' : '';
+        b.textContent = seta + sinal(arred) + f2(Math.abs(arred)) + (dolar ? '%' : ' p.p.');
+        if (k.bomSeSobe !== null && arred !== 0) b.className = (arred > 0) === k.bomSeSobe ? 'bom' : 'ruim';
+        dEl.append(b, ' em 12 meses · era ' + (dolar ? brl(vAntes, 2) : pct(vAntes)));
+      }
+      rEl.textContent = 'Referência: ' + mesTxt(atual.data);
+      card.setAttribute('aria-label', card.querySelector('.k').textContent + ': ' + vEl.textContent + '. ' + dEl.textContent + '. ' + rEl.textContent);
+    }
+  }
+
+  // ---------- Gráfico de linhas genérico ----------
+  // series: [{campo, nome, cor, tracejado?, largura?}] · fmt: formata valores · incluirZero: eixo y parte do 0
+  function graficoLinhas(el, linhas, {series, fmt, fmtEixo, incluirZero, extrasDica, rotular}) {
+    el.replaceChildren();
+    const valores = linhas.flatMap((r) => series.map((s) => r[s.campo])).filter((v) => v != null);
+    if (!linhas.length || !valores.length) {
+      el.innerHTML = '<div class="vazio">Sem dados no período.</div>';
+      return;
+    }
+    const W = Math.max(280, el.clientWidth || 600);
+    const estreito = W < 560;
+    const H = estreito ? 250 : 310, mt = 14, mb = 28;
+    const mr = rotular && !estreito ? 96 : 14;
+
+    let [ymin, ymax] = d3.extent(valores);
+    if (incluirZero) { ymin = Math.min(0, ymin); ymax = Math.max(0, ymax); }
+    if (ymin === ymax) { ymin -= 1; ymax += 1; }
+    const y = d3.scaleLinear().domain([ymin, ymax]).nice(5).range([H - mb, mt]);
+
+    const svg = d3.select(el).append('svg').attr('width', W).attr('height', H)
+      .attr('role', 'img').attr('tabindex', 0)
+      .attr('aria-label', el.dataset.titulo + '. Use as setas para percorrer os meses.');
+
+    // eixo y: mede os rótulos para dimensionar a margem esquerda
+    const gy = svg.append('g').call(d3.axisLeft(y).ticks(5).tickFormat(fmtEixo).tickSize(0).tickPadding(0));
+    gy.select('.domain').remove();
+    let ml = 0;
+    gy.selectAll('text').each(function () { ml = Math.max(ml, this.getComputedTextLength()); });
+    ml = Math.ceil(ml) + 12;
+    gy.attr('transform', `translate(${ml - 8},0)`);
+
+    const x = d3.scaleTime().domain(d3.extent(linhas, (r) => r.data)).range([ml + 4, W - mr]);
+
+    // grade recessiva + linha do zero destacada
+    svg.insert('g', ':first-child').selectAll('line').data(y.ticks(5)).join('line')
+      .attr('x1', ml).attr('x2', W - mr).attr('y1', (t) => y(t)).attr('y2', (t) => y(t))
+      .style('stroke', (t) => t === 0 ? 'rgba(255,255,255,.28)' : 'rgba(255,255,255,.07)');
+
+    const nTicks = Math.max(2, Math.floor((W - ml - mr) / 78));
+    const meses = linhas.length;
+    const fmtX = meses <= 24 ? mesCurto : tickData;
+    const ticksX = meses <= 24 ? x.ticks(d3.timeMonth.every(Math.max(1, Math.ceil(meses / nTicks)))) : x.ticks(nTicks);
+    svg.append('g').attr('transform', `translate(0,${H - mb})`)
+      .call(d3.axisBottom(x).tickValues(ticksX).tickFormat(fmtX).tickSize(0).tickPadding(10))
+      .call((g) => g.select('.domain').style('stroke', 'rgba(255,255,255,.14)'));
+
+    const defs = svg.append('defs');
+    const idBrilho = 'brilho-' + el.id;
+    const gl = defs.append('filter').attr('id', idBrilho).attr('x', '-10%').attr('y', '-30%').attr('width', '120%').attr('height', '160%');
+    gl.append('feGaussianBlur').attr('stdDeviation', 3).attr('result', 'b');
+    const fm = gl.append('feMerge'); fm.append('feMergeNode').attr('in', 'b'); fm.append('feMergeNode').attr('in', 'SourceGraphic');
+
+    for (const s of series) {
+      let cor = s.cor;
+      if (s.degrade) {
+        const id = 'degrade-' + el.id;
+        const lg = defs.append('linearGradient').attr('id', id).attr('gradientUnits', 'userSpaceOnUse')
+          .attr('x1', ml).attr('x2', W - mr).attr('y1', 0).attr('y2', 0);
+        lg.append('stop').attr('offset', '0%').attr('stop-color', '#5b8cff');
+        lg.append('stop').attr('offset', '100%').attr('stop-color', '#a77bff');
+        cor = `url(#${id})`;
+      }
+      // .defined() abre um buraco onde o valor é nulo em vez de ligar pontos inexistentes
+      const linha = d3.line().defined((r) => r[s.campo] != null).x((r) => x(r.data)).y((r) => y(r[s.campo])).curve(d3.curveMonotoneX);
+      svg.append('path').datum(linhas).attr('d', linha).attr('fill', 'none')
+        .style('stroke', cor).style('stroke-width', s.largura || 2).style('stroke-linejoin', 'round').style('stroke-linecap', 'round')
+        .style('stroke-dasharray', s.tracejado ? '6 4' : null)
+        .attr('filter', s.brilho ? `url(#${idBrilho})` : null);
+    }
+
+    // rótulos diretos no fim de cada linha (último valor não nulo), afastados para não colidir
+    if (rotular && !estreito) {
+      const rots = series.map((s) => {
+        const ult = [...linhas].reverse().find((r) => r[s.campo] != null);
+        return ult ? {s, ult, y: y(ult[s.campo])} : null;
+      }).filter(Boolean).sort((a, b) => a.y - b.y);
+      for (let i = 1; i < rots.length; i++) if (rots[i].y - rots[i - 1].y < 15) rots[i].y = rots[i - 1].y + 15;
+      const g = svg.append('g');
+      for (const r of rots) {
+        g.append('circle').attr('cx', x(r.ult.data)).attr('cy', y(r.ult[r.s.campo])).attr('r', 4)
+          .style('fill', '#0b1022').style('stroke', r.s.cor).style('stroke-width', 2);
+        g.append('text').attr('x', W - mr + 10).attr('y', r.y + 4)
+          .style('fill', 'var(--fg)').style('font-size', 'var(--fs-caption)').style('font-variant-numeric', 'tabular-nums')
+          .text(r.s.curto + ' ' + fmt(r.ult[r.s.campo]));
+      }
+    }
+
+    // ---------- camada de hover: guia vertical + pontos + dica ----------
+    const guia = svg.append('line').attr('y1', mt).attr('y2', H - mb)
+      .style('stroke', 'rgba(167,123,255,.55)').style('stroke-dasharray', '3 3').style('display', 'none');
+    const pontos = svg.append('g').style('display', 'none');
+    const dica = d3.select(el).append('div').attr('class', 'dica').style('display', 'none');
+    const bis = d3.bisector((r) => r.data).center;
+    let idx = linhas.length - 1;
+
+    const mostrar = (i) => {
+      idx = Math.max(0, Math.min(linhas.length - 1, i));
+      const r = linhas[idx];
+      const px = x(r.data);
+      guia.attr('x1', px).attr('x2', px).style('display', null);
+      pontos.style('display', null).selectAll('circle')
+        .data(series.filter((s) => r[s.campo] != null)).join('circle')
+        .attr('cx', px).attr('cy', (s) => y(r[s.campo])).attr('r', 4.5)
+        .style('fill', (s) => s.degrade ? '#8f84ff' : s.cor).style('stroke', '#0b1022').style('stroke-width', 2);
+      dica.node().replaceChildren();
+      dica.append('div').attr('class', 'h').text(mesTxt(r.data));
+      for (const s of series) {
+        const l = dica.append('div').attr('class', 'l');
+        const n = l.append('span');
+        n.append('i').style('background', s.degrade ? 'linear-gradient(90deg,#5b8cff,#a77bff)' : s.cor);
+        n.append('span').text(s.nome);
+        l.append('span').text(r[s.campo] == null ? 'sem dado' : fmt(r[s.campo]));
+      }
+      if (extrasDica) for (const [nome, valor] of extrasDica(r)) {
+        const l = dica.append('div').attr('class', 'l');
+        l.append('span').text(nome); l.append('span').text(valor);
+      }
+      dica.style('display', null);
+      const tw = dica.node().offsetWidth;
+      let left = px + 14;
+      if (left + tw > W) left = px - tw - 14;
+      dica.style('left', Math.max(0, left) + 'px');
+    };
+    const esconder = () => { guia.style('display', 'none'); pontos.style('display', 'none'); dica.style('display', 'none'); };
+
+    svg.append('rect').attr('x', ml).attr('y', 0).attr('width', Math.max(0, W - mr - ml + 8)).attr('height', H - mb)
+      .attr('fill', 'transparent')
+      .on('pointermove pointerdown', (ev) => mostrar(bis(linhas, x.invert(d3.pointer(ev)[0]))))
+      .on('pointerleave', esconder);
+    svg.on('keydown', (ev) => {
+      const passos = {ArrowLeft: -1, ArrowRight: 1, Home: -Infinity, End: Infinity};
+      if (!(ev.key in passos)) return;
+      ev.preventDefault();
+      const p = passos[ev.key];
+      mostrar(Number.isFinite(p) ? idx + p : (p < 0 ? 0 : linhas.length - 1));
+    }).on('focus', () => mostrar(idx)).on('blur', esconder);
+  }
+
+  // ---------- Período, gráficos e tabela ----------
+  function linhasDoPeriodo() {
+    const n = PERIODOS[periodo];
+    if (!MESES_DADOS.length || !Number.isFinite(n)) return MESES_DADOS;
+    const inicio = somarMeses(MESES_DADOS[MESES_DADOS.length - 1].data, -(n - 1));
+    return MESES_DADOS.filter((r) => r.data >= inicio);
+  }
+
+  const SERIES_JUROS = [
+    {campo: 'selic_meta_aa', nome: 'Selic meta', curto: 'Selic', cor: '#5b8cff', largura: 2.5},
+    {campo: 'ipca_12m', nome: 'IPCA 12m', curto: 'IPCA', cor: '#c97f35', largura: 2.5},
+    {campo: 'juro_real_ex_post_aa', nome: 'Juro real ex-post', curto: 'Real', cor: '#a274f5', tracejado: true, largura: 2},
+  ];
+
+  function desenharGraficos() {
+    const linhas = linhasDoPeriodo();
+    const elJ = document.getElementById('grafico-juros');
+    elJ.dataset.titulo = 'Selic meta, IPCA 12 meses e juro real ex-post, em % ao ano';
+    graficoLinhas(elJ, linhas, {
+      series: SERIES_JUROS, fmt: pct, fmtEixo: (v) => f0(v) + '%', incluirZero: true, rotular: true,
+    });
+    const elD = document.getElementById('grafico-dolar');
+    elD.dataset.titulo = 'Dólar PTAX venda, média mensal em reais';
+    graficoLinhas(elD, linhas, {
+      series: [{campo: 'dolar_ptax_medio', nome: 'Média do mês', cor: '#5b8cff', degrade: true, brilho: true, largura: 2.5}],
+      fmt: (v) => brl(v), fmtEixo: (v) => 'R$ ' + f1(v), incluirZero: false, rotular: false,
+      extrasDica: (r) => [['Fim do mês', brl(r.dolar_ptax_fim_mes)]],
+    });
+
+    const intervalo = document.getElementById('intervalo');
+    intervalo.textContent = linhas.length ? mesTxt(linhas[0].data) + ' – ' + mesTxt(linhas[linhas.length - 1].data) : '';
+
+    const tbody = document.querySelector('#tabela tbody');
+    tbody.replaceChildren(...[...linhas].reverse().map((r) => {
+      const tr = document.createElement('tr');
+      const cels = [mesTxt(r.data), pct(r.selic_meta_aa), pct(r.ipca_mensal), pct(r.ipca_12m), pct(r.juro_real_ex_post_aa), brl(r.dolar_ptax_medio), brl(r.dolar_ptax_fim_mes)];
+      cels.forEach((t, i) => { const td = document.createElement(i ? 'td' : 'th'); if (!i) td.scope = 'row'; td.textContent = t; tr.appendChild(td); });
+      return tr;
+    }));
+  }
+
+  function aplicarPeriodo(p, atualizarUrl) {
+    periodo = p;
+    document.querySelectorAll('.periodos button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.periodo === p)));
+    if (atualizarUrl) history.replaceState(null, '', p === PERIODO_PADRAO ? location.pathname + location.search : '#' + p);
+    desenharGraficos();
+  }
+
+  document.querySelectorAll('.periodos button').forEach((b) => b.addEventListener('click', () => aplicarPeriodo(b.dataset.periodo, true)));
+  window.addEventListener('hashchange', () => aplicarPeriodo(lerPeriodoDaUrl(), false));
+
+  // redesenha ao mudar a largura (rotação do celular, redimensionar a janela)
+  let larguraAnterior = 0, agendado = 0;
+  new ResizeObserver((entradas) => {
+    const w = Math.round(entradas[0].contentRect.width);
+    if (!MESES_DADOS.length || w === larguraAnterior) return;
+    larguraAnterior = w;
+    cancelAnimationFrame(agendado);
+    agendado = requestAnimationFrame(desenharGraficos);
+  }).observe(document.getElementById('grafico-juros'));
+
+  // ---------- Carga ----------
+  periodo = lerPeriodoDaUrl();
+  document.querySelectorAll('.periodos button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.periodo === periodo)));
+
+  fetch('dados.json', {cache: 'no-cache'})
+    .then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then((dados) => {
+      MESES_DADOS = (dados.meses || [])
+        .map((m) => ({...m, data: paraData(m.mes_referencia)}))
+        .sort((a, b) => a.data - b.data);
+      porMes = new Map(MESES_DADOS.map((m) => [chaveMes(m.data), m]));
+      if (dados.gerado_em) {
+        const quando = new Intl.DateTimeFormat('pt-BR', {dateStyle: 'long', timeStyle: 'short', timeZone: 'America/Sao_Paulo'})
+          .format(new Date(dados.gerado_em));
+        document.getElementById('gerado-em').textContent = 'gerado em ' + quando + ' (horário de Brasília)';
+      }
+      desenharKpis();
+      aplicarPeriodo(periodo, false);
+    })
+    .catch((e) => {
+      console.error(e);
+      mostrarErro('Não foi possível carregar <code>dados.json</code> (' + String(e.message).replace(/[<>&]/g, '') + '). '
+        + 'Abrindo o arquivo direto do disco, o navegador bloqueia a leitura: gere o JSON com '
+        + '<code>uv run indicadores exportar</code> e sirva a pasta com <code>uv run python -m http.server -d dashboard</code>.');
+    });
+})();
+</script>
+</body>
+</html>

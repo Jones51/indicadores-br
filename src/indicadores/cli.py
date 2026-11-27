@@ -23,6 +23,14 @@ def cmd_ingest(args: argparse.Namespace) -> None:
         con.close()
 
 
+def cmd_exportar(args: argparse.Namespace) -> None:
+    # Import local: o subcomando fica isolado e não mexe no bloco de imports do `ingest`.
+    from indicadores.exportar import exportar
+
+    n = exportar(args.saida)
+    print(f"[ok] {n} meses -> {args.saida}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="indicadores")
     sub = parser.add_subparsers(dest="comando", required=True)
@@ -31,6 +39,10 @@ def main() -> None:
     p_ingest.add_argument("--inicio", default="2010-01-01", help="Data inicial (AAAA-MM-DD)")
     p_ingest.add_argument("--series", nargs="*", help="Nomes das séries (padrão: todas)")
     p_ingest.set_defaults(func=cmd_ingest)
+
+    p_exportar = sub.add_parser("exportar", help="Exporta o mart para o JSON do dashboard")
+    p_exportar.add_argument("--saida", default="dashboard/dados.json", help="Arquivo JSON de saída")
+    p_exportar.set_defaults(func=cmd_exportar)
 
     args = parser.parse_args()
     args.func(args)

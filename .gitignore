@@ -13,7 +13,7 @@ data/*
 transform/target/
 transform/dbt_packages/
 transform/logs/
-transform/.user.yml
+.user.yml
 site/
 
 # Ambiente

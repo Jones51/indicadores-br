@@ -2,20 +2,24 @@ version: 2
 
 models:
   - name: fct_indicadores_mensais
-    description: Indicadores macroeconômicos consolidados por mês.
+    description: >
+      Indicadores macroeconômicos consolidados por mês. Um mês entra assim que qualquer
+      série tiver observação nele, então o mês corrente aparece com Selic e dólar antes
+      da divulgação do IPCA (que sai com ~1 mês de defasagem); colunas de séries ainda
+      sem dado no mês ficam nulas.
     columns:
       - name: mes_referencia
         description: Primeiro dia do mês de referência.
         data_tests: [unique, not_null]
       - name: selic_meta_aa
-        description: Meta Selic vigente no último dia do mês (% a.a.).
+        description: Meta Selic vigente no último dia com dado do mês (% a.a.). Nulo se não houver observação da Selic no mês.
       - name: ipca_mensal
-        description: Variação mensal do IPCA (%).
+        description: Variação mensal do IPCA (%). Nulo enquanto o IPCA do mês não for divulgado (normalmente o mês corrente).
       - name: ipca_12m
-        description: IPCA acumulado em 12 meses (%).
+        description: IPCA acumulado em 12 meses (%). Nulo enquanto o IPCA do mês não for divulgado (normalmente o mês corrente).
       - name: juro_real_ex_post_aa
-        description: Selic meta descontada do IPCA 12m pela equação de Fisher (% a.a.).
+        description: Selic meta descontada do IPCA 12m pela equação de Fisher (% a.a.). Nulo se faltar a Selic ou o IPCA 12m do mês.
       - name: dolar_ptax_medio
-        description: Média mensal da PTAX venda (R$/US$).
+        description: Média mensal da PTAX venda (R$/US$), até o último dia com dado no mês. Nulo se não houver cotação no mês.
       - name: dolar_ptax_fim_mes
-        description: PTAX venda do último dia útil do mês (R$/US$).
+        description: PTAX venda do último dia útil com dado no mês (R$/US$); no mês corrente, a cotação mais recente. Nulo se não houver cotação no mês.

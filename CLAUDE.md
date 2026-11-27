@@ -80,6 +80,8 @@ uv run dbt docs generate --profiles-dir . --no-compile ; uv run dbt docs serve -
 - SIDRA: período `AAAATT` (trimestre) ou `AAAAMM` (trimestre móvel, identificado pelo último mês);
   `data` = 1º dia do último mês do período (ADR 0004). Série = tabela + variável + classificação,
   identificada por `serie_nome` em `raw.ibge_sidra`.
+- As duas APIs dão 5xx/timeout esporádicos (ex.: 502 do SGS na janela de 10 anos da Selic):
+  todo GET passa por `extract/http.py:get_com_retentativas` (4 tentativas, 2s/4s/8s; 4xx não repete).
 - SIDRA incremental: faixa `p/AAAAPP-AAAAPP` (pode terminar num período não divulgado; faixa sem
   dados = só cabeçalho; faixa invertida = 400). O full usa `p/all`.
 - Mudar o schema de uma tabela raw (DDL em `load.py`) torna o `prod.duckdb` publicado "inválido"

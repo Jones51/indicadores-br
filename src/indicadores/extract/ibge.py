@@ -26,6 +26,7 @@ from typing import NamedTuple
 import httpx
 
 from indicadores.config import SerieSIDRA
+from indicadores.extract.http import get_com_retentativas
 
 BASE_URL = "https://apisidra.ibge.gov.br/values"
 
@@ -154,7 +155,7 @@ def extrair_serie(
     proprio_client = client is None
     client = client or httpx.Client(timeout=60.0)
     try:
-        resp = client.get(montar_url(serie, periodos))
+        resp = get_com_retentativas(client, montar_url(serie, periodos))
         if resp.status_code == 400:  # o SIDRA explica o erro em texto puro
             raise ValueError(f"SIDRA recusou a consulta de {serie.nome}: {resp.text.strip()}")
         resp.raise_for_status()

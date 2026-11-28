@@ -17,16 +17,14 @@ fora_da_faixa as (
         or meta - tolerancia <= 0
 ),
 
-anos_esperados as (
-    select unnest(range(min(ano), max(ano) + 1)) as ano
-    from metas
-),
-
+-- anos contíguos: cada ano é o anterior + 1 (lag evita gerar a série esperada)
 anos_faltando as (
-    select anos_esperados.ano, 'ano faltando no seed' as problema
-    from anos_esperados
-    left join metas using (ano)
-    where metas.ano is null
+    select ano, 'ano faltando no seed antes deste' as problema
+    from (
+        select ano, ano - lag(ano) over (order by ano) as salto
+        from metas
+    )
+    where salto <> 1
 )
 
 select * from fora_da_faixa

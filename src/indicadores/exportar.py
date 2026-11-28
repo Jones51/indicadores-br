@@ -24,6 +24,11 @@ COLUNAS = (
     "juro_real_ex_post_aa",
     "dolar_ptax_medio",
     "dolar_ptax_fim_mes",
+    "meta_inflacao",
+    "meta_inflacao_inferior",
+    "meta_inflacao_superior",
+    "status_meta_inflacao",
+    "meses_seguidos_status_meta",
 )
 
 CASAS_DECIMAIS = 4  # suficiente para % com 2 casas e PTAX com 4; corta o ruído de float das médias

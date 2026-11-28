@@ -23,3 +23,31 @@ models:
         description: Média mensal da PTAX venda (R$/US$), até o último dia com dado no mês. Nulo se não houver cotação no mês.
       - name: dolar_ptax_fim_mes
         description: PTAX venda do último dia útil com dado no mês (R$/US$); no mês corrente, a cotação mais recente. Nulo se não houver cotação no mês.
+      - name: meta_inflacao
+        description: >
+          Centro da meta para a inflação (%) vigente no ano do mês, do seed `metas_inflacao` (CMN).
+          Desde 2025 é a meta contínua, que segue valendo até o CMN fixar outra (ADR 0007).
+          Preenchida mesmo no mês corrente, sem IPCA. Nula só para meses anteriores ao seed
+          (antes de 2010), o que o teste `not_null` acusa.
+        data_tests: [not_null]
+      - name: meta_inflacao_inferior
+        description: Piso do intervalo de tolerância da meta (%) = meta − tolerância.
+        data_tests: [not_null]
+      - name: meta_inflacao_superior
+        description: Teto do intervalo de tolerância da meta (%) = meta + tolerância.
+        data_tests: [not_null]
+      - name: status_meta_inflacao
+        description: >
+          Posição do IPCA 12m em relação à banda da meta do ano: `acima` (maior que o teto),
+          `dentro` (entre piso e teto, limites inclusivos) ou `abaixo` (menor que o piso). Nulo
+          enquanto o IPCA do mês não for divulgado. Até 2024 a meta formal era sobre o IPCA de
+          dezembro; nos outros meses o status é uma referência analítica, não descumprimento.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [acima, dentro, abaixo]
+      - name: meses_seguidos_status_meta
+        description: >
+          Quantos meses seguidos, terminando neste, o IPCA 12m está com o mesmo
+          `status_meta_inflacao` (1 = o status mudou neste mês). Na meta contínua (desde 2025),
+          6 meses seguidos fora da banda caracterizam descumprimento. Nulo quando o status é nulo.

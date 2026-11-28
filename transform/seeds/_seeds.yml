@@ -1,0 +1,36 @@
+version: 2
+
+seeds:
+  - name: metas_inflacao
+    description: >
+      Metas para a inflação (IPCA) fixadas pelo Conselho Monetário Nacional, uma linha por ano a
+      partir de 2010. Fonte: histórico oficial do BCB
+      (https://www.bcb.gov.br/controleinflacao/historicometas), conferido em 28/11/2026.
+      Até 2024 a meta valia para o IPCA do ano-calendário. Desde 2025 vale a **meta contínua**
+      (Decreto nº 12.079/2024, Resolução CMN nº 5.141/2024): 3,00% ± 1,5 p.p. sobre o IPCA
+      acumulado em 12 meses, verificado mês a mês, sem data de término. Por isso a última linha
+      (2025) vale para todos os anos seguintes: o mart usa a linha mais recente com
+      `ano <= ano do mês` (ADR 0007). Uma nova meta do CMN = nova linha com o ano de início.
+    config:
+      column_types:
+        ano: integer
+        meta: decimal(5, 2)
+        tolerancia: decimal(5, 2)
+        norma: varchar
+    columns:
+      - name: ano
+        description: >
+          Ano a partir do qual a meta vale. Até 2024, o ano-calendário da meta; a linha de 2025 é
+          a meta contínua e continua valendo nos anos seguintes até o CMN fixar outra.
+        data_tests: [unique, not_null]
+      - name: meta
+        description: Centro da meta para o IPCA (%).
+        data_tests: [not_null]
+      - name: tolerancia
+        description: >
+          Tamanho do intervalo de tolerância (p.p.), para cima e para baixo do centro: a banda é
+          `meta ± tolerancia`.
+        data_tests: [not_null]
+      - name: norma
+        description: Resolução do CMN que fixou a meta (rastreabilidade da fonte).
+        data_tests: [not_null]

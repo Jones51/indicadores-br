@@ -83,6 +83,7 @@ flowchart LR
 | Staging | `stg_ibge__sidra` | one row per (series, date), typed | view |
 | Seed | `seeds.metas_inflacao` | one row per year: CMN inflation target and tolerance ([ADR 0007](docs/adr/0007-metas-inflacao-seed.md)) | table (`dbt seed`) |
 | Marts | `fct_indicadores_mensais` | one row per month, one column per indicator | table |
+| Marts | `fct_decisoes_copom` | one row per change to the Selic target (effective date in SGS 432, previous/new rate, change in bp) ([ADR 0008](docs/adr/0008-direcao-visual-copom-brief.md)) | table |
 
 Mart columns:
 
@@ -238,8 +239,9 @@ The site shows:
 - **Model and column descriptions** from the YAML
 - Which columns carry **tests**
 
-The **dashboard** (KPI cards with 24-month sparklines, key alerts, Selic × IPCA against the
-inflation target band, monthly IPCA and USD/BRL) is published on
+The **dashboard** — a monetary policy brief: a rule-generated headline, the inflation target ruler,
+the indicator row with 24-month sparklines, the Copom tape, key alerts, Selic × IPCA against the
+target band, monthly IPCA and USD/BRL — is published on
 the same site, from a JSON exported from the mart by the CI ([ADR 0005](docs/adr/0005-dashboard-estatico-pages.md)):
 
 **→ [https://jones51.github.io/indicadores-br/dashboard/](https://jones51.github.io/indicadores-br/dashboard/)**

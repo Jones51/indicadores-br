@@ -51,7 +51,8 @@ uv run dbt docs generate --profiles-dir . --no-compile ; uv run dbt docs serve -
 - `src/indicadores/estado.py` / `reconciliar.py` — validação do warehouse herdado e
   reconciliação incremental × full (ADR 0006).
 - `src/indicadores/exportar.py` — exporta o mart para `dados.json` do dashboard (`indicadores exportar`).
-- `dashboard/` — página estática (D3) publicada em `/dashboard/` no Pages (ADR 0005).
+- `dashboard/` — página estática (D3) publicada em `/dashboard/` no Pages (ADR 0005). Direção visual,
+  tokens e padrões de componente em `.interface-design/system.md` (ADR 0008): siga antes de mexer na página.
 - `transform/models/staging/` — `stg_<fonte>__<entidade>`, views, só tipagem/renomeação.
 - `transform/models/marts/` — `fct_`/`dim_`, tabelas, regras de negócio.
 - `transform/seeds/` — dados de referência mantidos à mão (`metas_inflacao.csv`: metas do CMN;

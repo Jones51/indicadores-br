@@ -54,6 +54,8 @@ uv run dbt docs generate --profiles-dir . --no-compile ; uv run dbt docs serve -
 - `dashboard/` — página estática (D3) publicada em `/dashboard/` no Pages (ADR 0005).
 - `transform/models/staging/` — `stg_<fonte>__<entidade>`, views, só tipagem/renomeação.
 - `transform/models/marts/` — `fct_`/`dim_`, tabelas, regras de negócio.
+- `transform/seeds/` — dados de referência mantidos à mão (`metas_inflacao.csv`: metas do CMN;
+  a última linha vale para os anos seguintes, ADR 0007). Nova meta = nova linha com o ano de início.
 - `docs/adr/` — decisões de arquitetura numeradas (`NNNN-titulo.md`).
 - `ci/profiles.yml` — target `prod` usado pela CI (`data/prod.duckdb`).
 - `.github/workflows/dbt_build.yml` — CI: valida PRs; na `main` publica `prod.duckdb` na release

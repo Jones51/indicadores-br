@@ -30,6 +30,9 @@ packages = ["src/indicadores"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# Skills do agente (.claude/) trazem exemplos de código em Markdown que não são do projeto;
+# o ruff formata blocos de código em .md e reprovaria o `format --check` da CI por eles.
+extend-exclude = [".claude"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]

@@ -81,7 +81,9 @@ flowchart LR
 | Source | `raw.reconciliacoes` | one row per (run, series): incremental × full reconciliation | table (Python load) |
 | Staging | `stg_bcb__sgs` | one row per (series, date), typed | view |
 | Staging | `stg_ibge__sidra` | one row per (series, date), typed | view |
+| Seed | `seeds.metas_inflacao` | one row per year: CMN inflation target and tolerance ([ADR 0007](docs/adr/0007-metas-inflacao-seed.md)) | table (`dbt seed`) |
 | Marts | `fct_indicadores_mensais` | one row per month, one column per indicator | table |
+| Marts | `fct_decisoes_copom` | one row per change to the Selic target (effective date in SGS 432, previous/new rate, change in bp) ([ADR 0008](docs/adr/0008-direcao-visual-copom-brief.md)) | table |
 
 Mart columns:
 
@@ -94,6 +96,10 @@ Mart columns:
 | `juro_real_ex_post_aa` | Selic deflated by 12-month IPCA via the Fisher equation (% p.a.); null if an input is missing |
 | `dolar_ptax_medio` | monthly average of the PTAX selling rate (BRL per USD) |
 | `dolar_ptax_fim_mes` | PTAX selling rate on the last business day of the month (BRL per USD) |
+| `meta_inflacao` | CMN inflation target in force in the month's year (%); since 2025 the continuous 3.00% target |
+| `meta_inflacao_inferior` / `meta_inflacao_superior` | floor and ceiling of the tolerance band (target ∓ tolerance, %) |
+| `status_meta_inflacao` | 12-month IPCA vs. the band: `acima` (above), `dentro` (within), `abaixo` (below); null until IPCA is released |
+| `meses_seguidos_status_meta` | consecutive months, ending in this one, with the same status |
 
 And the dbt features doing the work:
 
@@ -102,9 +108,10 @@ And the dbt features doing the work:
 | Declared sources (no hardcoded paths in SQL) | [`_sources.yml`](transform/models/staging/_sources.yml) + `source('raw', 'bcb_sgs')`, with an 8-day `freshness` check |
 | Model dependencies | `ref()` everywhere downstream; dbt resolves order and parallelism |
 | Materializations | set per folder in [`dbt_project.yml`](transform/dbt_project.yml): `staging/` → `view`, `marts/` → `table` |
-| Data tests | `unique` + `not_null` on `mes_referencia`; `accepted_values` on series names; singular uniqueness tests per (series, date) ([`assert_stg_bcb_unico_por_serie_data`](transform/tests/assert_stg_bcb_unico_por_serie_data.sql)) |
+| Seeds | [`metas_inflacao.csv`](transform/seeds/metas_inflacao.csv): reference data kept by hand, typed with `column_types` and tested like a model |
+| Data tests | `unique` + `not_null` on `mes_referencia`; `accepted_values` on series names and target status; seed range/contiguity test; singular uniqueness tests per (series, date) ([`assert_stg_bcb_unico_por_serie_data`](transform/tests/assert_stg_bcb_unico_por_serie_data.sql)) |
 | Static analysis | `+static_analysis: strict`: SQL validated at compile time, column-level lineage in Docs v2 |
-| Custom schemas | [`generate_schema_name`](transform/macros/generate_schema_name.sql) macro: `staging` and `marts` without the target prefix |
+| Custom schemas | [`generate_schema_name`](transform/macros/generate_schema_name.sql) macro: `staging`, `marts` and `seeds` without the target prefix |
 | Environments | local `dev` ([`transform/profiles.yml`](transform/profiles.yml)) vs CI `prod` ([`ci/profiles.yml`](ci/profiles.yml)) |
 
 `dbt build` compiles SQL, materializes models, and fails the run if any test fails — same command
@@ -232,7 +239,9 @@ The site shows:
 - **Model and column descriptions** from the YAML
 - Which columns carry **tests**
 
-The **dashboard** (KPIs and charts for Selic, IPCA, real interest rate and USD/BRL) is published on
+The **dashboard** — a monetary policy brief: a rule-generated headline, the inflation target ruler,
+the indicator row with 24-month sparklines, the Copom tape, key alerts, Selic × IPCA against the
+target band, monthly IPCA and USD/BRL — is published on
 the same site, from a JSON exported from the mart by the CI ([ADR 0005](docs/adr/0005-dashboard-estatico-pages.md)):
 
 **→ [https://jones51.github.io/indicadores-br/dashboard/](https://jones51.github.io/indicadores-br/dashboard/)**
@@ -332,6 +341,7 @@ A new series = a new entry in `SERIES_BCB` or `SERIES_IBGE` ([`config.py`](src/i
 ├── tests/                            # unit tests (no network)
 ├── transform/                        # dbt project
 │   ├── dbt_project.yml
+│   ├── seeds/                        # metas_inflacao.csv (CMN inflation targets)
 │   ├── models/
 │   │   ├── staging/                  # _sources.yml, stg_bcb__sgs, stg_ibge__sidra (views)
 │   │   └── marts/                    # fct_indicadores_mensais + tests (tables)

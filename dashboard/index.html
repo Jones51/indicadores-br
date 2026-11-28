@@ -4,175 +4,274 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Brazil Economic Indicators</title>
-<meta name="description" content="Selic, IPCA, real interest rate and USD/BRL PTAX month by month, from the Central Bank of Brazil SGS API. Refreshed automatically by the indicadores-br CI.">
+<meta name="description" content="A monetary policy brief for Brazil: what Copom did with the Selic, where inflation sits against the CMN target, the real interest rate and USD/BRL, from Central Bank of Brazil data. Refreshed automatically by the indicadores-br CI.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap" rel="stylesheet">
 <style>
+/* Direção e tokens: .interface-design/system.md · ADR 0008.
+   Tema "Trading Desk": grafite num tom só, variando só a luminosidade; profundidade só por bordas de 1px. */
 :root{
-  --bg:#0a0e1c;--fg:#eef1ff;--muted:rgba(214,222,255,.66);--faint:rgba(214,222,255,.46);
-  --line:rgba(255,255,255,.08);--glass-b:rgba(255,255,255,.10);
-  --blue:#5b8cff;--violet:#a77bff;--ok:#6ee7b7;--bad:#fb7185;
-  /* séries do gráfico de juros: paleta validada para daltonismo sobre a superfície escura */
-  --s-selic:#5b8cff;--s-ipca:#c97f35;--s-juro:#a274f5;
-  --fs-caption:12.5px;--fs-body:15px;--fs-heading:18px;
+  /* superfícies */
+  --desk:#0e131a;--panel:#141a22;--panel-raised:#19202a;
+  /* tinta */
+  --ink:#e7ecf2;--ink-2:#a8b3c1;--ink-3:#7d8a9b;
+  /* bordas (ring de 1px) */
+  --rule:rgba(255,255,255,.07);--rule-2:rgba(255,255,255,.12);--focus:#8fc9ea;
+  /* séries: validate_palette.js --pairs all, dark, surface #141a22 — todas PASS */
+  --selic:#3a9fd0;--ipca:#c27f1c;--real:#d0507a;
+  /* meta do CMN: a banda é o próprio IPCA bem apagado; a linha da meta é tinta neutra */
+  --band:rgba(194,127,28,.18);--target:rgba(231,236,242,.5);
+  --grid:rgba(255,255,255,.06);--baseline:rgba(255,255,255,.2);--spark:rgba(168,179,193,.55);
+  /* status: reservados, sempre com glifo + rótulo; mais claros que as séries para não se confundirem */
+  --good:#5fd0b5;--warning:#e6cf5c;--critical:#ff9b8f;
+  /* tipografia: escala 1.25 a partir de 14px */
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+  --serif:"Newsreader",Georgia,"Times New Roman",serif;
+  --t-meta:11px;--t-small:12px;--t-body:14px;--t-h4:18px;--t-h3:22px;--t-h2:28px;--t-display:35px;
   color-scheme:dark;
 }
 *{box-sizing:border-box}
-html,body{margin:0;min-height:100%}
-body{
-  background-color:var(--bg);
-  background:
-    radial-gradient(1100px 620px at 8% -12%,rgba(91,140,255,.28),transparent 62%),
-    radial-gradient(900px 620px at 102% 4%,rgba(167,123,255,.24),transparent 60%),
-    radial-gradient(900px 600px at 50% 112%,rgba(76,110,245,.16),transparent 62%),
-    linear-gradient(180deg,#0b1022 0%,#0a0d1a 100%);
-  background-attachment:fixed;
-  color:var(--fg);
-  font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
-  font-size:var(--fs-body);line-height:1.5;
-  -webkit-font-smoothing:antialiased;
-}
-a{color:#b9c6ff}
-a:hover{color:#fff}
-.pagina{max-width:1180px;margin:0 auto;padding:clamp(16px,3vw,36px);display:flex;flex-direction:column;gap:clamp(18px,2.4vw,28px)}
-h1{font-weight:600;font-size:clamp(26px,3.4vw,38px);letter-spacing:-.02em;margin:0;line-height:1.15;
-  background:linear-gradient(90deg,#ffffff 0%,#c9d6ff 45%,#c4a8ff 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
-.lede{margin:10px 0 0;color:var(--muted);max-width:76ch}
-.lede b{color:var(--fg);font-weight:600}
-.barra{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin-top:18px}
-.barra .rotulo{font-size:var(--fs-caption);color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
-.periodos{display:inline-flex;padding:3px;gap:2px;border-radius:12px;background:rgba(255,255,255,.05);border:1px solid var(--glass-b)}
-.periodos button{font:inherit;font-size:14px;color:var(--muted);background:transparent;border:0;border-radius:9px;padding:6px 14px;min-height:34px;cursor:pointer;transition:background .15s,color .15s}
-.periodos button:hover{color:var(--fg)}
-.periodos button[aria-pressed=true]{color:#fff;background:linear-gradient(90deg,rgba(91,140,255,.45),rgba(167,123,255,.38));box-shadow:inset 0 1px 0 rgba(255,255,255,.18)}
-.periodos button:focus-visible,.grafico svg:focus-visible,summary:focus-visible{outline:2px solid #b9c6ff;outline-offset:2px}
-.barra .intervalo{font-size:var(--fs-caption);color:var(--faint);font-variant-numeric:tabular-nums}
+html,body{margin:0}
+body{background:var(--desk);color:var(--ink);font-family:var(--sans);font-size:var(--t-body);line-height:1.5;-webkit-font-smoothing:antialiased}
+a{color:var(--ink-2);text-decoration-color:var(--rule-2);text-underline-offset:3px}
+a:hover{color:var(--ink);text-decoration-color:var(--ink-3)}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 
-.vidro{position:relative;background:linear-gradient(160deg,rgba(255,255,255,.075) 0%,rgba(255,255,255,.025) 100%);border:1px solid var(--glass-b);border-radius:18px;
-  backdrop-filter:blur(16px) saturate(140%);-webkit-backdrop-filter:blur(16px) saturate(140%);
-  box-shadow:0 10px 40px rgba(3,6,20,.45),inset 0 1px 0 rgba(255,255,255,.10);overflow:hidden}
-.vidro::before{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(420px 160px at 0% 0%,rgba(140,170,255,.13),transparent 70%)}
-.vidro>*{position:relative}
-section.vidro{padding:clamp(16px,2.2vw,24px)}
+.pagina{max-width:1160px;margin:0 auto;padding:24px 24px 32px;display:flex;flex-direction:column;gap:16px}
+.mono{font-family:var(--mono);font-size:var(--t-meta);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.painel{background:var(--panel);border-radius:8px;box-shadow:0 0 0 1px var(--rule);padding:20px}
 
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:14px}
-.kpi{padding:18px 20px;display:flex;flex-direction:column;gap:6px;min-width:0}
-.kpi::after{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,var(--blue),var(--violet));opacity:.85}
-.kpi .k{font-size:var(--fs-caption);color:var(--muted);text-transform:uppercase;letter-spacing:.07em;line-height:1.35}
-.kpi .v{font-weight:600;font-size:clamp(30px,3.4vw,42px);letter-spacing:-.025em;line-height:1.1;font-variant-numeric:tabular-nums;
-  background:linear-gradient(90deg,#ffffff,#d5ddff 55%,#cdb6ff);-webkit-background-clip:text;background-clip:text;color:transparent}
-.kpi .v small{font-size:.45em;letter-spacing:0;margin-left:4px;font-weight:500}
-.kpi .d{font-size:var(--fs-caption);color:var(--faint);font-variant-numeric:tabular-nums}
-.kpi .d b{font-weight:600;color:var(--muted)}
-.kpi .d b.bom{color:var(--ok)}
-.kpi .d b.ruim{color:var(--bad)}
+/* ---------- cabeçalho ---------- */
+.topo{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:4px 16px;padding-bottom:12px;border-bottom:1px solid var(--rule)}
+.topo h1{font-size:var(--t-h4);font-weight:600;letter-spacing:-.005em;margin:0}
+.topo .mono b{font-weight:500;color:var(--ink-2)}
 
-h2{font-size:var(--fs-heading);font-weight:600;letter-spacing:-.01em;margin:0 0 4px}
-.sub{margin:0 0 14px;color:var(--muted);font-size:var(--fs-caption)}
-.legenda{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:var(--fs-caption);color:var(--muted);margin-bottom:8px;align-items:center}
-.legenda i{display:inline-block;width:20px;height:0;border-top:3px solid;border-radius:2px;margin-right:6px;vertical-align:3px}
+/* ---------- manchete (foco) ---------- */
+.lead{padding:24px 24px 20px}
+.lead .mono{margin:0 0 8px}
+.manchete{font-family:var(--serif);font-weight:500;font-size:var(--t-display);line-height:1.15;letter-spacing:-.015em;margin:0;text-wrap:balance;max-width:34ch}
+.manchete em{font-style:normal;color:var(--warning)}
+.manchete em.dentro{color:var(--good)}
+.dek{color:var(--ink-2);margin:12px 0 0;max-width:80ch;text-wrap:pretty}
+
+/* régua da meta */
+.regua{margin-top:20px}
+.regua svg{display:block;overflow:visible}
+.regua svg text{font-family:var(--sans)}
+.regua .chave{display:flex;flex-wrap:wrap;gap:4px 16px;margin-top:4px;font-size:var(--t-small);color:var(--ink-3);font-variant-numeric:tabular-nums}
+.regua .chave i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px}
+.regua .chave i.atual{background:var(--ipca)}
+.regua .chave i.antes{border:1.5px solid var(--ink-3)}
+.regua .chave i.banda{border-radius:2px;background:var(--band);width:14px}
+
+/* linha de indicadores (ledger) */
+.ledger{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));margin-top:20px;border-top:1px solid var(--rule-2)}
+.ledger article{padding:12px 16px 0;display:flex;flex-direction:column;gap:2px;min-width:0}
+.ledger article:first-child{padding-left:0}
+.ledger article+article{border-left:1px solid var(--rule)}
+.ledger .k{font-size:var(--t-small);font-weight:500;color:var(--ink-2)}
+.ledger .v{font-size:var(--t-h2);font-weight:600;letter-spacing:-.02em;line-height:1.15;font-variant-numeric:proportional-nums}
+.ledger .v small{font-size:var(--t-small);font-weight:500;color:var(--ink-3);margin-left:4px;letter-spacing:0}
+.ledger .m{font-size:var(--t-small);color:var(--ink-3);font-variant-numeric:tabular-nums}
+.ledger .status{display:flex;align-items:center;gap:6px;font-size:var(--t-small);font-weight:500;color:var(--ink)}
+.ledger .status[hidden]{display:none}
+.ledger .spark{margin-top:auto;padding-top:8px;height:36px}
+.ledger .spark svg{display:block;overflow:visible}
+
+/* fita do Copom */
+.fita{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:20px;padding-top:12px;border-top:1px solid var(--rule);font-family:var(--mono);font-size:var(--t-meta);font-variant-numeric:tabular-nums}
+.fita[hidden]{display:none}
+.fita .rot{color:var(--ink-3);letter-spacing:.06em;text-transform:uppercase;margin-right:4px}
+.fita ol{display:contents;list-style:none}
+.fita li{padding:2px 8px;border-radius:4px;background:var(--panel-raised);box-shadow:0 0 0 1px var(--rule);color:var(--ink-2);white-space:nowrap}
+.fita li b{font-weight:500;color:var(--ink)}
+.fita li.agora{background:transparent;box-shadow:none;color:var(--ink)}
+.fita .nota{flex-basis:100%;color:var(--ink-3);font-family:var(--sans);font-size:var(--t-meta);margin-top:4px}
+
+/* ---------- glifo de status ---------- */
+.ico{flex:none;display:inline-grid;place-items:center;width:16px;height:16px;border-radius:50%;font-family:var(--sans);font-size:10px;font-weight:700;line-height:1;color:#0e131a}
+.ico.good{background:var(--good)}
+.ico.warning{background:var(--warning)}
+.ico.critical{background:var(--critical)}
+.ico.info{background:transparent;box-shadow:inset 0 0 0 1.5px var(--ink-2);color:var(--ink)}
+.ico.neutro{background:transparent;box-shadow:inset 0 0 0 1.5px var(--ink-3);color:var(--ink-3)}
+
+/* ---------- alertas ---------- */
+.alertas{padding:16px 20px}
+.alertas h2{font-family:var(--serif);font-weight:600;font-size:var(--t-h4);margin:0 0 8px;letter-spacing:-.005em}
+.alertas ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.alertas li{display:flex;align-items:flex-start;gap:10px;line-height:1.45;min-width:0;text-wrap:pretty}
+.alertas li .ico{margin-top:2px}
+.alertas .nivel{font-family:var(--mono);font-size:var(--t-meta);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);margin-right:8px}
+.alertas .quando{color:var(--ink-3);font-size:var(--t-small);white-space:nowrap}
+
+/* ---------- filtro de período (acima do que ele afeta: gráficos e tabela) ---------- */
+.filtro{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-top:8px}
+.periodos{display:inline-flex;padding:2px;gap:2px;border-radius:6px;background:var(--panel);box-shadow:0 0 0 1px var(--rule)}
+.periodos button{font:inherit;font-size:13px;color:var(--ink-2);background:transparent;border:0;border-radius:4px;padding:6px 12px;min-height:36px;cursor:pointer;transition:color .15s,background-color .15s}
+.periodos button:hover{color:var(--ink)}
+.periodos button:active{transform:scale(.97)}
+.periodos button[aria-pressed=true]{color:var(--ink);background:var(--panel-raised);box-shadow:0 0 0 1px var(--rule-2)}
+.filtro .intervalo{font-size:var(--t-small);color:var(--ink-3);font-variant-numeric:tabular-nums}
+
+/* ---------- seções de gráfico ---------- */
+.secao h2{font-family:var(--serif);font-weight:600;font-size:var(--t-h3);letter-spacing:-.01em;line-height:1.2;margin:0 0 4px;text-wrap:balance}
+.sub{margin:0 0 12px;color:var(--ink-2);text-wrap:pretty}
+.legenda{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:var(--t-small);color:var(--ink-2);margin-bottom:8px;align-items:center}
+.legenda i{display:inline-block;width:16px;height:0;border-top:2px solid;margin-right:6px;vertical-align:3px}
 .legenda i.tracejado{border-top-style:dashed}
-.legenda i.degrade{border:0;height:4px;background:linear-gradient(90deg,var(--blue),var(--violet))}
-.grafico{position:relative;min-height:240px;touch-action:pan-y}
+.legenda i.fina{border-top-width:1px;border-color:var(--target)}
+.legenda i.faixa{height:10px;border:0;background:var(--band);border-radius:2px;vertical-align:-1px}
+.grafico{position:relative;min-height:220px;touch-action:pan-y}
 .grafico svg{display:block;overflow:visible}
-.grafico .tick text{fill:var(--faint);font-size:var(--fs-caption);font-variant-numeric:tabular-nums}
+.grafico svg text,.grafico .tick text{font-family:var(--sans)}
+.grafico .tick text{fill:var(--ink-3);font-size:var(--t-meta);font-variant-numeric:tabular-nums}
 .grafico .tick line{stroke:none}
-.dica{position:absolute;top:8px;pointer-events:none;background:rgba(16,21,42,.9);border:1px solid rgba(255,255,255,.14);box-shadow:0 12px 30px rgba(0,0,0,.45);
-  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-radius:10px;padding:8px 12px;font-size:var(--fs-caption);white-space:nowrap;z-index:2;font-variant-numeric:tabular-nums}
-.dica .h{font-weight:600;margin-bottom:3px}
-.dica .l{display:flex;align-items:center;gap:8px;justify-content:space-between}
-.dica .l span:first-child{color:var(--muted)}
-.dica .l i{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:0}
-.vazio{color:var(--muted);font-size:var(--fs-caption);padding:40px 0;text-align:center}
+.dica{position:absolute;top:8px;pointer-events:none;background:var(--panel-raised);box-shadow:0 0 0 1px var(--rule-2);border-radius:6px;padding:8px 12px;font-size:var(--t-small);white-space:nowrap;z-index:2;font-variant-numeric:tabular-nums}
+.dica .h{font-weight:600;margin-bottom:4px}
+.dica .l{display:flex;align-items:center;gap:16px;justify-content:space-between}
+.dica .l>span:first-child{color:var(--ink-3)}
+.dica .l>span:last-child{color:var(--ink);font-weight:600}
+.dica .l i{display:inline-block;width:12px;height:0;border-top:2px solid;margin-right:6px;vertical-align:3px}
+.dica .l i.faixa{height:8px;border:0;background:var(--band);vertical-align:0}
+.vazio{color:var(--ink-3);font-size:var(--t-small);padding:40px 0;text-align:center}
 
-details.vidro{padding:14px 20px;font-size:var(--fs-caption);color:var(--muted)}
-details summary{cursor:pointer;color:var(--fg);font-size:14px}
+/* ---------- tabela e metodologia ---------- */
+details.painel{padding:16px 20px;color:var(--ink-2)}
+details summary{cursor:pointer;color:var(--ink);font-family:var(--serif);font-weight:600;font-size:var(--t-h4)}
 details li{margin:6px 0}
-details b{color:var(--fg)}
+details b{color:var(--ink);font-weight:600}
+details ul ul{padding-left:20px}
 .rolagem{overflow-x:auto;margin-top:12px;max-height:420px;overflow-y:auto}
 table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;font-size:13px}
-th{font-weight:500;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;font-size:11.5px;text-align:right;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;position:sticky;top:0;background:#121831}
-td{padding:7px 10px;text-align:right;border-bottom:1px solid rgba(255,255,255,.05);white-space:nowrap;color:rgba(238,241,255,.88)}
+th{font-family:var(--mono);font-weight:500;color:var(--ink-3);text-transform:uppercase;letter-spacing:.05em;font-size:var(--t-meta);text-align:right;padding:8px 10px;border-bottom:1px solid var(--rule-2);white-space:nowrap;position:sticky;top:0;background:var(--panel-raised)}
+td{padding:6px 10px;text-align:right;border-bottom:1px solid var(--rule);white-space:nowrap;color:var(--ink)}
+tbody th{font-family:var(--sans);font-size:13px;text-transform:none;letter-spacing:0;color:var(--ink-2);background:transparent;position:static;border-bottom:1px solid var(--rule)}
 th:first-child,td:first-child{text-align:left}
 
-.erro{border-color:rgba(251,113,133,.45);color:var(--fg);padding:16px 20px}
-.erro code{color:#ffd1d9}
-footer{font-size:var(--fs-caption);color:var(--faint);display:flex;flex-wrap:wrap;gap:6px 18px;justify-content:space-between;padding:4px 2px 8px}
-footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
-@media (max-width:520px){
-  .kpi{padding:14px 16px}
-  .periodos button{padding:6px 11px}
+.erro{box-shadow:0 0 0 1px var(--critical);color:var(--ink)}
+.erro code{font-family:var(--mono);color:var(--critical)}
+footer{font-size:var(--t-small);color:var(--ink-3);display:flex;flex-wrap:wrap;gap:4px 16px;justify-content:space-between;padding:8px 0 0;border-top:1px solid var(--rule)}
+footer nav{display:flex;flex-wrap:wrap;gap:4px 16px}
+
+@media (max-width:760px){
+  .pagina{padding:16px 16px 24px}
+  .painel,.lead{padding:16px}
+  .manchete{font-size:26px}
+  .ledger{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .ledger article:nth-child(odd){padding-left:0;border-left:0}
+  .ledger article:nth-child(n+3){border-top:1px solid var(--rule);margin-top:12px}
+  .ledger .v{font-size:var(--t-h3)}
+  .secao h2{font-size:var(--t-h4)}
 }
-@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}.periodos button:active{transform:none}}
+@media (forced-colors:active){.ico{border:1px solid CanvasText}}
 </style>
 </head>
 <body>
 <main class="pagina">
-  <header>
-    <h1>Brazil economic indicators</h1>
-    <p class="lede">Interest rates, inflation and the exchange rate month by month since 2010, from the <b>Central Bank of Brazil SGS</b> series, modeled with dbt and refreshed automatically every week.</p>
-    <div class="barra">
-      <span class="rotulo" id="rotulo-periodo">Chart period</span>
-      <div class="periodos" role="group" aria-labelledby="rotulo-periodo">
-        <button type="button" data-periodo="1a">1 year</button>
-        <button type="button" data-periodo="5a">5 years</button>
-        <button type="button" data-periodo="10a">10 years</button>
-        <button type="button" data-periodo="tudo">All</button>
-      </div>
-      <span class="intervalo" id="intervalo"></span>
-    </div>
+  <header class="topo">
+    <h1>Brazil Economic Indicators</h1>
+    <span class="mono" id="ultima-carga">BCB SGS · CMN</span>
   </header>
 
-  <div id="erro" class="vidro erro" role="alert" hidden></div>
+  <div id="erro" class="painel erro" role="alert" hidden></div>
 
-  <section class="kpis" aria-label="Latest indicators">
-    <article class="vidro kpi" id="kpi-selic">
-      <span class="k">Selic target</span>
-      <span class="v">—</span>
-      <span class="d delta">&nbsp;</span>
-      <span class="d ref">&nbsp;</span>
-    </article>
-    <article class="vidro kpi" id="kpi-ipca">
-      <span class="k">IPCA 12 months</span>
-      <span class="v">—</span>
-      <span class="d delta">&nbsp;</span>
-      <span class="d ref">&nbsp;</span>
-    </article>
-    <article class="vidro kpi" id="kpi-juro">
-      <span class="k">Ex-post real rate</span>
-      <span class="v">—</span>
-      <span class="d delta">&nbsp;</span>
-      <span class="d ref">&nbsp;</span>
-    </article>
-    <article class="vidro kpi" id="kpi-dolar">
-      <span class="k">USD/BRL PTAX (monthly avg.)</span>
-      <span class="v">—</span>
-      <span class="d delta">&nbsp;</span>
-      <span class="d ref">&nbsp;</span>
-    </article>
+  <section class="painel lead" aria-labelledby="manchete">
+    <p class="mono" id="edicao">Monetary policy brief</p>
+    <h2 class="manchete" id="manchete">Loading the latest data…</h2>
+    <p class="dek" id="dek"></p>
+
+    <figure class="regua" id="regua" aria-labelledby="regua-desc" style="margin-left:0;margin-right:0;margin-bottom:0">
+      <div id="regua-svg"></div>
+      <figcaption class="chave" id="regua-desc"></figcaption>
+    </figure>
+
+    <div class="ledger" role="list" aria-label="Latest indicators">
+      <article role="listitem" id="kpi-selic">
+        <span class="k">Selic target</span>
+        <span class="v">—</span>
+        <span class="m delta">&nbsp;</span>
+        <div class="spark" aria-hidden="true"></div>
+      </article>
+      <article role="listitem" id="kpi-ipca">
+        <span class="k">IPCA 12 months</span>
+        <span class="v">—</span>
+        <span class="status" hidden></span>
+        <span class="m delta">&nbsp;</span>
+        <div class="spark" aria-hidden="true"></div>
+      </article>
+      <article role="listitem" id="kpi-juro">
+        <span class="k">Ex-post real rate</span>
+        <span class="v">—</span>
+        <span class="m delta">&nbsp;</span>
+        <div class="spark" aria-hidden="true"></div>
+      </article>
+      <article role="listitem" id="kpi-dolar">
+        <span class="k">USD/BRL PTAX</span>
+        <span class="v">—</span>
+        <span class="m delta">&nbsp;</span>
+        <div class="spark" aria-hidden="true"></div>
+      </article>
+    </div>
+
+    <div class="fita" id="fita" hidden>
+      <span class="rot">Copom</span>
+      <ol id="fita-lista" aria-label="Latest changes to the Selic target, in basis points"></ol>
+      <span class="nota">Date the new rate took effect in the SGS 432 series, usually the business day after the meeting. Holds do not appear.</span>
+    </div>
   </section>
 
-  <section class="vidro" aria-labelledby="t-juros">
-    <h2 id="t-juros">Selic × inflation</h2>
-    <p class="sub">Selic target at each month end, 12-month accumulated IPCA and the resulting ex-post real interest rate (% p.a.).</p>
+  <section class="painel alertas" aria-labelledby="t-alertas">
+    <h2 id="t-alertas">Key Alerts</h2>
+    <ul id="lista-alertas"><li><span class="ico neutro" aria-hidden="true">…</span><span>Loading…</span></li></ul>
+  </section>
+
+  <div class="filtro">
+    <span class="mono" id="rotulo-periodo">Chart period</span>
+    <div class="periodos" role="group" aria-labelledby="rotulo-periodo">
+      <button type="button" data-periodo="1a">1 year</button>
+      <button type="button" data-periodo="5a">5 years</button>
+      <button type="button" data-periodo="10a">10 years</button>
+      <button type="button" data-periodo="tudo">All</button>
+    </div>
+    <span class="intervalo" id="intervalo"></span>
+  </div>
+
+  <section class="painel secao" aria-labelledby="t-juros">
+    <h2 id="t-juros">Selic and Inflation Against the Target</h2>
+    <p class="sub">Selic target at each month end, 12-month IPCA against the CMN inflation target and its tolerance band, and the resulting ex-post real interest rate (% p.a.).</p>
     <div class="legenda">
-      <span><i style="border-color:var(--s-selic)"></i>Selic target</span>
-      <span><i style="border-color:var(--s-ipca)"></i>IPCA 12m</span>
-      <span><i class="tracejado" style="border-color:var(--s-juro)"></i>Ex-post real rate</span>
+      <span><i style="border-color:var(--selic)"></i>Selic target</span>
+      <span><i style="border-color:var(--ipca)"></i>IPCA 12m</span>
+      <span><i class="tracejado" style="border-color:var(--real)"></i>Ex-post real rate</span>
+      <span><i class="fina"></i>Inflation target</span>
+      <span><i class="faixa"></i>Tolerance band</span>
     </div>
     <div class="grafico" id="grafico-juros"></div>
   </section>
 
-  <section class="vidro" aria-labelledby="t-dolar">
+  <section class="painel secao" aria-labelledby="t-ipca-mensal">
+    <h2 id="t-ipca-mensal">Monthly IPCA</h2>
+    <p class="sub">Change in consumer prices in each month (%). Months below zero had deflation. A month appears once IBGE releases it, usually in the following month.</p>
+    <div class="grafico" id="grafico-ipca-mensal"></div>
+  </section>
+
+  <section class="painel secao" aria-labelledby="t-dolar">
     <h2 id="t-dolar">USD/BRL PTAX</h2>
     <p class="sub">Monthly average of the PTAX selling rate (BRL per USD). The tooltip also shows the rate on the last business day of the month.</p>
     <div class="grafico" id="grafico-dolar"></div>
   </section>
 
-  <details class="vidro" id="tabela">
-    <summary>Show the period's data as a table</summary>
+  <details class="painel" id="tabela">
+    <summary>Show the Period’s Data as a Table</summary>
     <div class="rolagem">
       <table>
         <thead><tr>
           <th scope="col">Month</th><th scope="col">Selic target</th><th scope="col">IPCA month</th><th scope="col">IPCA 12m</th>
+          <th scope="col">Target (band)</th><th scope="col">IPCA 12m vs. band</th>
           <th scope="col">Real rate</th><th scope="col">PTAX avg.</th><th scope="col">PTAX month end</th>
         </tr></thead>
         <tbody></tbody>
@@ -180,20 +279,39 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
     </div>
   </details>
 
-  <details class="vidro">
-    <summary>How each number is calculated</summary>
+  <details class="painel">
+    <summary>How Each Number Is Calculated</summary>
     <ul>
+      <li><b>Headline:</b> written by rules from the data, in two parts.
+        <ul>
+          <li><b>Copom:</b> from the latest changes to the Selic target. If the last change took effect more than 50 days before the data was generated — longer than the ~45 days between Copom meetings — the headline says Copom <i>holds</i> the rate, mentioning the run of moves before it (“after five straight cuts”, or “after a 25 bp cut”). Otherwise it reports the run itself (“has cut five times in a row”) or the single move (“cuts the Selic by 25 bp”). “Holds” is inferred from that gap, not read from the meeting minutes.</li>
+          <li><b>Inflation:</b> the latest released 12-month IPCA against the band: “sits 0.13 pp above the ceiling”, “sits 0.30 pp below the floor” or “inside the target band”. When the most recent month has no IPCA yet, the line under the headline says so.</li>
+        </ul>
+      </li>
+      <li><b>Target ruler:</b> the latest 12-month IPCA (filled dot) on the CMN tolerance band (floor · target · ceiling), with the value 12 months earlier as a hollow dot.</li>
+      <li><b>Copom tape:</b> the latest changes to the Selic target in basis points (25 bp = 0.25 pp), dated by when the new rate took effect in the SGS 432 daily series — usually the business day after the meeting, not the meeting itself. Decisions to hold the rate do not change the series, so they do not appear.</li>
       <li><b>Selic target:</b> the Selic policy rate target set by Copom and in force on the last day of the month (SGS 432), in % per year.</li>
-      <li><b>IPCA 12 months:</b> official inflation accumulated over 12 months (SGS 13522). A month's IPCA is only released the following month, so the most recent month may not have inflation yet.</li>
+      <li><b>IPCA 12 months:</b> official inflation accumulated over 12 months (SGS 13522). A month’s IPCA is only released the following month, so the most recent month may not have inflation yet.</li>
+      <li><b>Monthly IPCA:</b> the month’s change in consumer prices (SGS 433). Months not yet released have no bar (they are not zero).</li>
+      <li><b>Inflation target and band:</b> set by the National Monetary Council (CMN) for each year — for example 4.50% ± 2.0 pp until 2016 and 3.00% ± 1.5 pp since 2024 (<a href="https://www.bcb.gov.br/controleinflacao/historicometas" rel="noopener">official history at the Central Bank</a>). Since 2025 the target is continuous: 3.00% ± 1.5 pp for 12-month IPCA, checked every month, until the CMN sets another one. Until 2024 the target applied to the calendar-year (December) IPCA, so the position of other months against the band is a reference, not a formal miss.</li>
+      <li><b>IPCA 12m vs. band:</b> above the ceiling (target + tolerance), within the band (limits included) or below the floor (target − tolerance), computed in the dbt model.</li>
       <li><b>Ex-post real rate:</b> Selic target deflated by 12-month IPCA using the Fisher equation: (1 + Selic) ÷ (1 + IPCA 12m) − 1.</li>
-      <li><b>USD/BRL PTAX:</b> average of the month's daily selling rates (SGS 1).</li>
-      <li><b>Cards:</b> each shows the latest month in which that indicator has a value and the change versus the same month a year earlier — in percentage points (pp) for rates and in % for the dollar.</li>
-      <li><b>Colors:</b> only inflation and the dollar are colored — red when they rise, green when they fall. Selic and the real rate stay neutral: rising or falling is neither good nor bad in itself.</li>
+      <li><b>USD/BRL PTAX:</b> average of the month’s daily selling rates (SGS 1). In the current month, the average so far.</li>
+      <li><b>Indicator row:</b> each figure is the latest month in which that indicator has a value, with the change versus the same month a year earlier — in basis points or percentage points for rates and in % for the dollar. The small trend line shows the 24 months up to that month, with the latest one marked; it does not follow the chart period.</li>
+      <li><b>Key alerts</b> (always on the latest data, regardless of the chart period):
+        <ul>
+          <li><b>Inflation outside the band</b> (warning): the latest 12-month IPCA is above the ceiling or below the floor. It becomes <b>critical</b> from 6 consecutive months outside the band counted since January 2025, the continuous-target definition of a missed target.</li>
+          <li><b>Copom decision</b> (info): the Selic target at the end of the latest month differs from the previous month’s.</li>
+          <li><b>Large dollar move</b>: the monthly average PTAX changed 5% or more versus the previous month — a warning when the dollar rises, info when it falls.</li>
+          <li>When no rule fires, the strip says “No alerts”.</li>
+        </ul>
+      </li>
+      <li><b>Colors:</b> each series keeps one color everywhere (Selic blue, IPCA amber, real rate rose, dashed). The target band is the IPCA color, faded. Status colors (teal within the band, yellow warning, coral critical) are reserved for status and always come with a symbol and a text label. Changes over 12 months are not colored: whether a move is good depends on the reader.</li>
     </ul>
   </details>
 
   <footer>
-    <span>Source: <a href="https://www3.bcb.gov.br/sgspub" rel="noopener">Central Bank of Brazil — SGS</a> · <span id="gerado-em">generated —</span><span id="ultimas-cargas"></span></span>
+    <span>Sources: <a href="https://www3.bcb.gov.br/sgspub" rel="noopener">Central Bank of Brazil — SGS</a> and <a href="https://www.bcb.gov.br/controleinflacao/historicometas" rel="noopener">CMN inflation targets</a> · <span id="gerado-em">generated —</span></span>
     <nav aria-label="Project links">
       <a href="../">dbt docs</a>
       <a href="https://github.com/Jones51/indicadores-br" rel="noopener">Repository</a>
@@ -209,10 +327,23 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
 (() => {
   'use strict';
 
-  // ---------- Formatação (inglês) ----------
+  // ---------- Constantes e formatação (inglês) ----------
   const MESES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const MESES_LONGOS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const NUMEROS = ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve'];
   const PERIODOS = {'1a': 12, '5a': 60, '10a': 120, 'tudo': Infinity};
   const PERIODO_PADRAO = '5a';
+  const MESES_SPARK = 24;
+  const LIMIAR_DOLAR = 5;            // % de variação da PTAX média vs. mês anterior que vira alerta
+  const MESES_DESCUMPRIMENTO = 6;    // meta contínua: 6 meses seguidos fora da banda
+  const INICIO_META_CONTINUA = new Date(2025, 0, 1);
+  const DIAS_MANUTENCAO = 50;        // sem mudança da Selic por mais que um ciclo de reuniões (~45 dias) = manutenção
+  const DECISOES_NA_FITA = 6;
+
+  // cores lidas dos tokens CSS (um lugar só para mudar)
+  const css = getComputedStyle(document.documentElement);
+  const tok = (n) => css.getPropertyValue(n).trim();
+  const COR = {selic: tok('--selic'), ipca: tok('--ipca'), juro: tok('--real'), dolar: tok('--selic'), superficie: tok('--panel')};
 
   const erroEl = document.getElementById('erro');
   const mostrarErro = (html) => { erroEl.innerHTML = html; erroEl.hidden = false; };
@@ -230,44 +361,242 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
   const pct = (v) => v == null ? '—' : f2(v) + '%';
   const brl = (v, casas = 4) => v == null ? '—' : 'R$ ' + (casas === 2 ? f2(v) : f4(v));
   const sinal = (v) => v > 0 ? '+' : v < 0 ? '−' : '±';
+  const comSinal = (v, fmt) => sinal(v) + fmt(Math.abs(v));
   const mesTxt = (d) => MESES[d.getMonth()] + ' ' + d.getFullYear();
   const mesCurto = (d) => MESES[d.getMonth()] + ' ’' + String(d.getFullYear()).slice(2);
+  const diaTxt = (d) => MESES[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
   const tickData = (d) => d.getMonth() === 0 ? String(d.getFullYear()) : MESES[d.getMonth()];
+  const ordinal = (n) => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ({1: 'st', 2: 'nd', 3: 'rd'}[n % 10] || 'th'));
+  const numeroTitulo = (n) => NUMEROS[n] || String(n);
 
   // "AAAA-MM-DD" -> Date local (evita o deslocamento de fuso de new Date("AAAA-MM-DD"), que é UTC)
   const paraData = (s) => { const [a, m, d] = s.split('-').map(Number); return new Date(a, m - 1, d || 1); };
   const chaveMes = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
   const somarMeses = (d, n) => new Date(d.getFullYear(), d.getMonth() + n, 1);
+  const mesesEntre = (a, b) => (b.getFullYear() - a.getFullYear()) * 12 + b.getMonth() - a.getMonth();
+
+  // Status do IPCA 12m vs. banda (vem pronto do mart: status_meta_inflacao)
+  const STATUS = {
+    acima: {texto: 'Above target ceiling', classe: 'warning', glifo: '!'},
+    dentro: {texto: 'Within target band', classe: 'good', glifo: '✓'},
+    abaixo: {texto: 'Below target floor', classe: 'warning', glifo: '!'},
+  };
+  const bandaTxt = (r) => r.meta_inflacao == null ? '—'
+    : f2(r.meta_inflacao) + '% (' + f2(r.meta_inflacao_inferior) + '–' + f2(r.meta_inflacao_superior) + '%)';
+  const statusTxt = (r) => STATUS[r.status_meta_inflacao] ? STATUS[r.status_meta_inflacao].texto : '—';
+
+  const icone = (classe, glifo) => {
+    const s = document.createElement('span');
+    s.className = 'ico ' + classe; s.setAttribute('aria-hidden', 'true'); s.textContent = glifo;
+    return s;
+  };
 
   // ---------- Estado ----------
   let MESES_DADOS = [];   // [{data: Date, selic_meta_aa, ...}] em ordem cronológica
   let porMes = new Map(); // "AAAA-MM" -> linha
+  let DECISOES = [];      // [{data: Date, selic_anterior_aa, selic_nova_aa, variacao_bp}] em ordem cronológica
   let periodo = PERIODO_PADRAO;
+  let gerado = null;      // Date do gerado_em
+  let mesGeracao = null;  // "AAAA-MM" do gerado_em, no horário de Brasília (mês ainda em curso)
 
   const lerPeriodoDaUrl = () => {
     const h = decodeURIComponent(location.hash.replace(/^#/, ''));
     return Object.hasOwn(PERIODOS, h) ? h : PERIODO_PADRAO;
   };
 
-  // ---------- KPIs ----------
   const ultimoValido = (campo) => {
     for (let i = MESES_DADOS.length - 1; i >= 0; i--) if (MESES_DADOS[i][campo] != null) return MESES_DADOS[i];
     return null;
   };
 
+  // ---------- Manchete (regras documentadas em "How Each Number Is Calculated" e no ADR 0008) ----------
+  function sequenciaCopom() {
+    if (!DECISOES.length) return null;
+    const ult = DECISOES[DECISOES.length - 1];
+    const sentido = Math.sign(ult.variacao_bp);
+    let n = 0;
+    for (let i = DECISOES.length - 1; i >= 0 && Math.sign(DECISOES[i].variacao_bp) === sentido; i--) n++;
+    const hoje = gerado || new Date();
+    const dias = Math.floor((hoje - ult.data) / 86400000);
+    return {ult, sentido, n, dias, mantida: dias > DIAS_MANUTENCAO};
+  }
+
+  function oracaoCopom(seq) {
+    if (!seq) return null;
+    const {ult, sentido, n, mantida} = seq;
+    const taxa = pct(ult.selic_nova_aa);
+    const bp = Math.abs(ult.variacao_bp) + ' bp';
+    if (mantida) {
+      return n >= 2
+        ? `Copom Holds the Selic at ${taxa} After ${numeroTitulo(n)} Straight ${sentido < 0 ? 'Cuts' : 'Hikes'}`
+        : `Copom Holds the Selic at ${taxa} After a ${bp} ${sentido < 0 ? 'Cut' : 'Hike'} in ${MESES[ult.data.getMonth()]}`;
+    }
+    return n >= 2
+      ? `Copom Has ${sentido < 0 ? 'Cut' : 'Raised'} ${n === 2 ? 'Twice' : numeroTitulo(n) + ' Times'} in a Row, to ${taxa}`
+      : `Copom ${sentido < 0 ? 'Cuts' : 'Raises'} the Selic by ${bp} to ${taxa}`;
+  }
+
+  function oracaoInflacao(ipca, comCopom) {
+    if (!ipca || !STATUS[ipca.status_meta_inflacao]) return null;
+    const st = ipca.status_meta_inflacao;
+    // a ênfase (cor de status) fica só no trecho que diz onde a inflação está; o resto é tinta normal
+    if (st === 'dentro') return {prefixo: comCopom ? 'With Inflation ' : 'Inflation Is ', enfase: 'Inside the Target Band', classe: 'dentro'};
+    const dist = st === 'acima' ? ipca.ipca_12m - ipca.meta_inflacao_superior : ipca.meta_inflacao_inferior - ipca.ipca_12m;
+    const onde = st === 'acima' ? 'Above the Ceiling' : 'Below the Floor';
+    return {prefixo: comCopom ? 'While Inflation Sits ' : 'Inflation Sits ', enfase: `${f2(dist)} pp ${onde}`, classe: st};
+  }
+
+  function desenharManchete() {
+    const h = document.getElementById('manchete');
+    const ipca = ultimoValido('ipca_12m');
+    const seq = sequenciaCopom();
+    const copom = oracaoCopom(seq);
+    const infl = oracaoInflacao(ipca, Boolean(copom));
+    h.replaceChildren();
+    if (copom) h.append(copom + (infl ? ', ' : ''));
+    if (infl) { const em = document.createElement('em'); em.className = infl.classe; em.textContent = infl.enfase; h.append(infl.prefixo, em); }
+    if (!copom && !infl) h.textContent = 'Brazil’s Latest Monetary Policy Indicators';
+
+    const ultimoMes = MESES_DADOS.length ? MESES_DADOS[MESES_DADOS.length - 1].data : null;
+    const partes = [];
+    if (ipca && ipca.meta_inflacao != null) {
+      partes.push(`12-month IPCA of ${pct(ipca.ipca_12m)} in ${mesTxt(ipca.data)}, against the ${pct(ipca.meta_inflacao)} target (band ${f2(ipca.meta_inflacao_inferior)}–${f2(ipca.meta_inflacao_superior)}%).`);
+    }
+    if (seq) {
+      partes.push(`Selic at ${pct(seq.ult.selic_nova_aa)} since ${diaTxt(seq.ult.data)}${seq.mantida ? ', unchanged for ' + seq.dias + ' days' : ''}.`);
+    }
+    if (ipca && ultimoMes && ultimoMes > ipca.data) partes.push(`${mesTxt(ultimoMes)} IPCA not released yet.`);
+    document.getElementById('dek').textContent = partes.join(' ');
+    if (ultimoMes) document.getElementById('edicao').textContent = 'Monetary policy brief · ' + mesTxt(ultimoMes);
+  }
+
+  // ---------- Régua da meta ----------
+  // IPCA 12m (ponto cheio) sobre a banda do CMN; 12 meses antes (ponto vazado). Rótulos de piso/meta/teto
+  // em duas linhas, abaixo da trilha; o valor atual acima do ponto. Sem colisão: rótulos que encostam somem.
+  function desenharRegua() {
+    const el = document.getElementById('regua-svg'), cap = document.getElementById('regua-desc');
+    el.replaceChildren(); cap.replaceChildren();
+    const r = ultimoValido('ipca_12m');
+    if (!r || r.meta_inflacao == null) { document.getElementById('regua').hidden = true; return; }
+    const antes = porMes.get(chaveMes(somarMeses(r.data, -12)));
+    const vAntes = antes ? antes.ipca_12m : null;
+    const W = Math.max(260, el.clientWidth || 600), H = 88, ty = 38;
+    const vals = [r.ipca_12m, r.meta_inflacao_inferior, r.meta_inflacao_superior].concat(vAntes == null ? [] : [vAntes]);
+    const lo = Math.min(0, Math.floor(d3.min(vals) - 0.5));
+    const hi = Math.max(6, Math.ceil(d3.max(vals) + 0.5));
+    const pad = 8;
+    const x = d3.scaleLinear().domain([lo, hi]).range([pad, W - pad]);
+    const svg = d3.select(el).append('svg').attr('width', W).attr('height', H).attr('role', 'img')
+      .attr('aria-label', `Target ruler: 12-month IPCA ${pct(r.ipca_12m)} in ${mesTxt(r.data)}; band floor ${pct(r.meta_inflacao_inferior)}, target ${pct(r.meta_inflacao)}, ceiling ${pct(r.meta_inflacao_superior)}` + (vAntes == null ? '' : `; ${pct(vAntes)} a year earlier`) + '.');
+
+    svg.append('rect').attr('x', x(lo)).attr('y', ty - 2).attr('width', x(hi) - x(lo)).attr('height', 4).attr('rx', 2).attr('fill', 'var(--rule-2)');
+    svg.append('rect').attr('x', x(r.meta_inflacao_inferior)).attr('y', ty - 9).attr('height', 18)
+      .attr('width', x(r.meta_inflacao_superior) - x(r.meta_inflacao_inferior)).attr('rx', 3).attr('fill', 'var(--band)');
+    for (const [v, forte] of [[r.meta_inflacao_inferior, false], [r.meta_inflacao, true], [r.meta_inflacao_superior, false]]) {
+      svg.append('line').attr('x1', x(v)).attr('x2', x(v)).attr('y1', ty - (forte ? 12 : 9)).attr('y2', ty + (forte ? 12 : 9))
+        .style('stroke', forte ? 'var(--ink-2)' : 'var(--ink-3)').style('stroke-width', forte ? 1.5 : 1);
+    }
+    if (vAntes != null) {
+      svg.append('circle').attr('cx', x(vAntes)).attr('cy', ty).attr('r', 5)
+        .style('fill', 'var(--panel)').style('stroke', 'var(--ink-3)').style('stroke-width', 1.5);
+    }
+    svg.append('circle').attr('cx', x(r.ipca_12m)).attr('cy', ty).attr('r', 7)
+      .style('fill', COR.ipca).style('stroke', COR.superficie).style('stroke-width', 2);
+
+    // rótulo do valor atual, acima do ponto, preso às bordas
+    const tAtual = svg.append('text').attr('y', ty - 18).attr('text-anchor', 'middle')
+      .style('fill', 'var(--ink)').style('font-size', '14px').style('font-weight', 600).style('font-variant-numeric', 'tabular-nums')
+      .text('IPCA ' + pct(r.ipca_12m));
+    const wA = tAtual.node().getComputedTextLength();
+    tAtual.attr('x', Math.max(wA / 2, Math.min(W - wA / 2, x(r.ipca_12m))));
+
+    // rótulos de piso/meta/teto (nome + valor) e extremos da escala; descarta os que colidem
+    const rotulos = [
+      {v: r.meta_inflacao_inferior, nome: 'Floor', prio: 1},
+      {v: r.meta_inflacao, nome: 'Target', prio: 0},
+      {v: r.meta_inflacao_superior, nome: 'Ceiling', prio: 1},
+      {v: lo, nome: '', prio: 2, ancora: 'start'},
+      {v: hi, nome: '', prio: 2, ancora: 'end'},
+    ];
+    const ocupados = [];
+    for (const rt of [...rotulos].sort((a, b) => a.prio - b.prio)) {
+      const g = svg.append('g');
+      const ancora = rt.ancora || 'middle';
+      const tv = g.append('text').attr('x', x(rt.v)).attr('y', ty + 30).attr('text-anchor', ancora)
+        .style('fill', rt.nome ? 'var(--ink-2)' : 'var(--ink-3)').style('font-size', '12px').style('font-variant-numeric', 'tabular-nums')
+        .text(rt.nome ? f2(rt.v) + '%' : f0(rt.v) + '%');
+      let w = tv.node().getComputedTextLength();
+      if (rt.nome) {
+        const tn = g.append('text').attr('x', x(rt.v)).attr('y', ty + 46).attr('text-anchor', ancora)
+          .style('fill', 'var(--ink-3)').style('font-size', '11px').style('font-family', 'var(--mono)').style('letter-spacing', '.06em')
+          .text(rt.nome.toUpperCase());
+        w = Math.max(w, tn.node().getComputedTextLength());
+      }
+      let x0 = ancora === 'start' ? x(rt.v) : ancora === 'end' ? x(rt.v) - w : x(rt.v) - w / 2;
+      // centrado mas encostando na borda: desloca para dentro
+      if (ancora === 'middle') {
+        const desloc = Math.max(0, -x0) - Math.max(0, x0 + w - W);
+        if (desloc) { g.attr('transform', `translate(${desloc},0)`); x0 += desloc; }
+      }
+      const caixa = [x0 - 6, x0 + w + 6];
+      if (ocupados.some(([a, b]) => caixa[0] < b && caixa[1] > a)) { g.remove(); continue; }
+      ocupados.push(caixa);
+    }
+
+    const item = (classe, texto) => { const s = document.createElement('span'); const i = document.createElement('i'); i.className = classe; s.append(i, texto); return s; };
+    cap.append(item('atual', `${mesTxt(r.data)}: ${pct(r.ipca_12m)}`));
+    if (vAntes != null) cap.append(item('antes', `${mesTxt(antes.data)}: ${pct(vAntes)}`));
+    cap.append(item('banda', `CMN tolerance band ${f2(r.meta_inflacao_inferior)}–${f2(r.meta_inflacao_superior)}%`));
+  }
+
+  // ---------- Linha de indicadores (ledger) ----------
   const KPIS = [
-    {id: 'kpi-selic', campo: 'selic_meta_aa', unidade: 'p.a.', tipo: 'pp', bomSeSobe: null},
-    {id: 'kpi-ipca', campo: 'ipca_12m', unidade: '', tipo: 'pp', bomSeSobe: false},
-    {id: 'kpi-juro', campo: 'juro_real_ex_post_aa', unidade: 'p.a.', tipo: 'pp', bomSeSobe: null},
-    {id: 'kpi-dolar', campo: 'dolar_ptax_medio', unidade: '', tipo: 'var', bomSeSobe: false},
+    {id: 'kpi-selic', campo: 'selic_meta_aa', unidade: 'p.a.', tipo: 'bp', cor: COR.selic, degrau: true},
+    {id: 'kpi-ipca', campo: 'ipca_12m', unidade: '', tipo: 'pp', cor: COR.ipca, meta: true},
+    {id: 'kpi-juro', campo: 'juro_real_ex_post_aa', unidade: 'p.a.', tipo: 'pp', cor: COR.juro},
+    {id: 'kpi-dolar', campo: 'dolar_ptax_medio', unidade: 'avg.', tipo: 'var', cor: COR.dolar},
   ];
 
-  function desenharKpis() {
+  // Sparkline: últimos 24 meses até o mês do indicador, sem eixos; linha recessiva e o último ponto na cor da série.
+  // No IPCA, a banda da meta aparece atrás como contexto.
+  function sparkline(el, k, atual) {
+    el.replaceChildren();
+    if (!atual) return '';
+    const inicio = somarMeses(atual.data, -(MESES_SPARK - 1));
+    const linhas = MESES_DADOS.filter((r) => r.data >= inicio && r.data <= atual.data);
+    const comValor = linhas.filter((r) => r[k.campo] != null);
+    if (comValor.length < 2) return '';
+    const W = Math.max(100, el.clientWidth || 200), H = 28, pad = 5;
+    const vals = comValor.map((r) => r[k.campo]);
+    if (k.meta) linhas.forEach((r) => { if (r.meta_inflacao != null) vals.push(r.meta_inflacao_inferior, r.meta_inflacao_superior); });
+    let [lo, hi] = d3.extent(vals);
+    if (lo === hi) { lo -= 1; hi += 1; }
+    const x = d3.scaleTime().domain([inicio, atual.data]).range([pad, W - pad]);
+    const y = d3.scaleLinear().domain([lo, hi]).range([H - pad, pad]);
+    const svg = d3.select(el).append('svg').attr('width', W).attr('height', H).attr('focusable', 'false');
+    if (k.meta) {
+      svg.append('path').datum(linhas).attr('fill', 'var(--band)')
+        .attr('d', d3.area().defined((r) => r.meta_inflacao != null).x((r) => x(r.data))
+          .y0((r) => y(r.meta_inflacao_inferior)).y1((r) => y(r.meta_inflacao_superior)).curve(d3.curveStepAfter));
+    }
+    svg.append('path').datum(linhas).attr('fill', 'none')
+      .style('stroke', 'var(--spark)').style('stroke-width', 1.5).style('stroke-linejoin', 'round').style('stroke-linecap', 'round')
+      .attr('d', d3.line().defined((r) => r[k.campo] != null).x((r) => x(r.data)).y((r) => y(r[k.campo]))
+        .curve(k.degrau ? d3.curveStepAfter : d3.curveMonotoneX));
+    svg.append('circle').attr('cx', x(atual.data)).attr('cy', y(atual[k.campo])).attr('r', 4)
+      .style('fill', k.cor).style('stroke', COR.superficie).style('stroke-width', 2);
+    const primeiro = comValor[0];
+    const fmt = k.tipo === 'var' ? (v) => brl(v, 2) : pct;
+    return ` 24-month trend: from ${fmt(primeiro[k.campo])} in ${mesTxt(primeiro.data)} to ${fmt(atual[k.campo])}.`;
+  }
+
+  function desenharLedger() {
     for (const k of KPIS) {
       const card = document.getElementById(k.id);
-      const vEl = card.querySelector('.v'), dEl = card.querySelector('.delta'), rEl = card.querySelector('.ref');
+      const vEl = card.querySelector('.v'), dEl = card.querySelector('.delta');
       const atual = ultimoValido(k.campo);
-      if (!atual) { vEl.textContent = '—'; dEl.textContent = 'no data'; rEl.innerHTML = '&nbsp;'; continue; }
+      const tendencia = sparkline(card.querySelector('.spark'), k, atual);
+      if (!atual) { vEl.textContent = '—'; dEl.textContent = 'no data'; continue; }
       const v = atual[k.campo];
       const dolar = k.tipo === 'var';
       vEl.textContent = dolar ? brl(v, 2) : pct(v);
@@ -275,35 +604,177 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
 
       const antes = porMes.get(chaveMes(somarMeses(atual.data, -12)));
       const vAntes = antes ? antes[k.campo] : null;
-      dEl.replaceChildren();
-      if (vAntes == null || (dolar && !vAntes)) {
-        dEl.textContent = 'no comparison with 12 months earlier';
-      } else {
-        const delta = dolar ? (v / vAntes - 1) * 100 : v - vAntes;
-        const arred = Math.round(delta * 100) / 100;
-        const b = document.createElement('b');
-        const seta = arred > 0 ? '▲ ' : arred < 0 ? '▼ ' : '';
-        b.textContent = seta + sinal(arred) + f2(Math.abs(arred)) + (dolar ? '%' : ' pp');
-        if (k.bomSeSobe !== null && arred !== 0) b.className = (arred > 0) === k.bomSeSobe ? 'bom' : 'ruim';
-        dEl.append(b, ' in 12 months · was ' + (dolar ? brl(vAntes, 2) : pct(vAntes)));
+      let delta;
+      if (vAntes == null || (dolar && !vAntes)) delta = 'no comparison a year earlier';
+      else if (dolar) delta = comSinal(Math.round((v / vAntes - 1) * 10000) / 100, f2) + '% in 12 months';
+      else if (k.tipo === 'bp') delta = comSinal(Math.round((v - vAntes) * 100), f0) + ' bp in 12 months';
+      else delta = comSinal(Math.round((v - vAntes) * 100) / 100, f2) + ' pp in 12 months';
+      const quando = dolar && chaveMes(atual.data) === mesGeracao ? mesTxt(atual.data) + ' so far' : mesTxt(atual.data);
+      dEl.textContent = quando + ' · ' + delta;
+
+      let extra = '';
+      if (k.meta) {
+        const stEl = card.querySelector('.status');
+        const st = STATUS[atual.status_meta_inflacao];
+        stEl.hidden = !st;
+        if (st) {
+          const txt = document.createElement('span'); txt.textContent = st.texto;
+          stEl.replaceChildren(icone(st.classe, st.glifo), txt);
+          extra = ' ' + st.texto + ' (' + bandaTxt(atual) + ').';
+        }
       }
-      rEl.textContent = 'Reference: ' + mesTxt(atual.data);
-      card.setAttribute('aria-label', card.querySelector('.k').textContent + ': ' + vEl.textContent + '. ' + dEl.textContent + '. ' + rEl.textContent);
+      card.setAttribute('aria-label', card.querySelector('.k').textContent + ': ' + vEl.textContent + '.' + extra + ' ' + dEl.textContent + '.' + tendencia);
     }
   }
 
-  // ---------- Gráfico de linhas genérico ----------
-  // series: [{campo, nome, cor, tracejado?, largura?}] · fmt: formata valores · incluirZero: eixo y parte do 0
-  function graficoLinhas(el, linhas, {series, fmt, fmtEixo, incluirZero, extrasDica, rotular}) {
+  // ---------- Fita do Copom ----------
+  function desenharFita() {
+    const fita = document.getElementById('fita'), ol = document.getElementById('fita-lista');
+    const ult = DECISOES.slice(-DECISOES_NA_FITA);
+    fita.hidden = !ult.length;
+    if (!ult.length) return;
+    let anoAnterior = null;
+    const itens = ult.map((d, i) => {
+      const li = document.createElement('li');
+      const ano = d.data.getFullYear();
+      // o ano aparece na primeira ficha e quando muda; nas demais, só o mês
+      const rotulo = i === 0 || ano !== anoAnterior ? mesCurto(d.data) : MESES[d.data.getMonth()];
+      anoAnterior = ano;
+      const b = document.createElement('b'); b.textContent = comSinal(d.variacao_bp, f0);
+      li.append(rotulo + ' ', b);
+      li.setAttribute('aria-label', `${diaTxt(d.data)}: ${d.variacao_bp > 0 ? 'raised' : 'cut'} ${Math.abs(d.variacao_bp)} basis points to ${pct(d.selic_nova_aa)}`);
+      return li;
+    });
+    const agora = document.createElement('li'); agora.className = 'agora';
+    agora.textContent = '→ ' + pct(ult[ult.length - 1].selic_nova_aa);
+    ol.replaceChildren(...itens, agora);
+  }
+
+  // ---------- Alertas ----------
+  // Regras sobre o dado mais recente (independem do filtro de período).
+  function calcularAlertas() {
+    const alertas = [];
+
+    // 1) IPCA 12m fora da banda; crítico com 6+ meses seguidos fora contados desde jan/2025 (meta contínua)
+    const ipca = ultimoValido('ipca_12m');
+    if (ipca && STATUS[ipca.status_meta_inflacao] && ipca.status_meta_inflacao !== 'dentro') {
+      const acima = ipca.status_meta_inflacao === 'acima';
+      const seguidos = ipca.meses_seguidos_status_meta || 1;
+      const naContinua = ipca.data >= INICIO_META_CONTINUA ? Math.min(seguidos, mesesEntre(INICIO_META_CONTINUA, ipca.data) + 1) : 0;
+      const critico = naContinua >= MESES_DESCUMPRIMENTO;
+      const limite = acima ? ipca.meta_inflacao_superior : ipca.meta_inflacao_inferior;
+      let texto = `IPCA 12m at ${pct(ipca.ipca_12m)} is ${acima ? 'above the ' + pct(limite) + ' target ceiling' : 'below the ' + pct(limite) + ' target floor'}`;
+      texto += seguidos > 1 ? ` — ${ordinal(seguidos)} month in a row.` : ' — first month outside the band.';
+      if (critico) texto += ` Under the continuous target, ${MESES_DESCUMPRIMENTO}+ consecutive months outside the band means the target was missed.`;
+      alertas.push({nivel: critico ? 'critical' : 'warning', rotulo: critico ? 'Critical' : 'Warning', glifo: critico ? '!!' : '!', texto, quando: ipca.data});
+    }
+
+    // 2) Decisão do Copom: Selic do fim do último mês diferente da do mês anterior
+    const selic = ultimoValido('selic_meta_aa');
+    const selicAntes = selic && porMes.get(chaveMes(somarMeses(selic.data, -1)));
+    if (selic && selicAntes && selicAntes.selic_meta_aa != null) {
+      const d = Math.round((selic.selic_meta_aa - selicAntes.selic_meta_aa) * 100);
+      if (d !== 0) {
+        alertas.push({nivel: 'info', rotulo: 'Info', glifo: 'i', quando: selic.data,
+          texto: `Copom ${d > 0 ? 'raised' : 'cut'} the Selic target by ${Math.abs(d)} bp to ${pct(selic.selic_meta_aa)} in ${MESES_LONGOS[selic.data.getMonth()]}.`});
+      }
+    }
+
+    // 3) Dólar: PTAX média do último mês variou 5% ou mais vs. o mês anterior
+    const dolar = ultimoValido('dolar_ptax_medio');
+    const dolarAntes = dolar && porMes.get(chaveMes(somarMeses(dolar.data, -1)));
+    if (dolar && dolarAntes && dolarAntes.dolar_ptax_medio) {
+      const varPct = Math.round((dolar.dolar_ptax_medio / dolarAntes.dolar_ptax_medio - 1) * 1000) / 10;
+      if (Math.abs(varPct) >= LIMIAR_DOLAR) {
+        const sobe = varPct > 0;
+        const parcial = chaveMes(dolar.data) === mesGeracao ? ' (month to date)' : '';
+        alertas.push({nivel: sobe ? 'warning' : 'info', rotulo: sobe ? 'Warning' : 'Info', glifo: sobe ? '!' : 'i', quando: dolar.data,
+          texto: `Dollar ${sobe ? 'up' : 'down'} ${f1(Math.abs(varPct))}% in a month: average PTAX ${brl(dolar.dolar_ptax_medio, 2)}${parcial} vs. ${brl(dolarAntes.dolar_ptax_medio, 2)} in ${MESES_LONGOS[dolarAntes.data.getMonth()]}.`});
+      }
+    }
+    const peso = {critical: 0, warning: 1, info: 2};
+    return alertas.sort((a, b) => peso[a.nivel] - peso[b.nivel]);
+  }
+
+  function desenharAlertas() {
+    const ul = document.getElementById('lista-alertas');
+    const alertas = calcularAlertas();
+    if (!alertas.length) {
+      const li = document.createElement('li');
+      const t = document.createElement('span');
+      t.textContent = 'No alerts — inflation is within the target band, the Selic target did not change and the dollar moved less than 5% in the latest month.';
+      li.append(icone('neutro', '–'), t);
+      ul.replaceChildren(li);
+      return;
+    }
+    ul.replaceChildren(...alertas.map((a) => {
+      const li = document.createElement('li');
+      const corpo = document.createElement('span');
+      const nivel = document.createElement('span'); nivel.className = 'nivel'; nivel.textContent = a.rotulo;
+      const quando = document.createElement('span'); quando.className = 'quando'; quando.textContent = ' · ' + mesTxt(a.quando);
+      corpo.append(nivel, a.texto, quando);
+      li.append(icone(a.nivel, a.glifo), corpo);
+      return li;
+    }));
+  }
+
+  // ---------- Eixos compartilhados ----------
+  function eixoY(svg, y, fmtEixo) {
+    const gy = svg.append('g').call(d3.axisLeft(y).ticks(5).tickFormat(fmtEixo).tickSize(0).tickPadding(0));
+    gy.select('.domain').remove();
+    let ml = 0;
+    gy.selectAll('text').each(function () { ml = Math.max(ml, this.getComputedTextLength()); });
+    ml = Math.ceil(ml) + 12;
+    gy.attr('transform', `translate(${ml - 8},0)`);
+    return ml;
+  }
+
+  // grade recessiva (hairline sólida) + linha do zero destacada
+  function grade(svg, y, x1, x2) {
+    svg.insert('g', ':first-child').selectAll('line').data(y.ticks(5)).join('line')
+      .attr('x1', x1).attr('x2', x2).attr('y1', (t) => y(t)).attr('y2', (t) => y(t))
+      .style('stroke', (t) => t === 0 ? 'var(--baseline)' : 'var(--grid)');
+  }
+
+  function posicionarDica(dica, px, W) {
+    dica.style('display', null);
+    const tw = dica.node().offsetWidth;
+    let left = px + 14;
+    if (left + tw > W) left = px - tw - 14;
+    dica.style('left', Math.max(0, left) + 'px');
+  }
+
+  function linhaDica(dica, nome, valor, chave) {
+    const l = dica.append('div').attr('class', 'l');
+    const n = l.append('span');
+    if (chave) chave(n.append('i'));
+    n.append('span').text(nome);
+    l.append('span').text(valor);
+  }
+
+  function teclado(svg, idxAtual, n, mostrar, esconder) {
+    svg.on('keydown', (ev) => {
+      const passos = {ArrowLeft: -1, ArrowRight: 1, Home: -Infinity, End: Infinity};
+      if (!(ev.key in passos)) return;
+      ev.preventDefault();
+      const p = passos[ev.key];
+      mostrar(Number.isFinite(p) ? idxAtual() + p : (p < 0 ? 0 : n - 1));
+    }).on('focus', () => mostrar(idxAtual())).on('blur', esconder);
+  }
+
+  // ---------- Gráfico de linhas ----------
+  // series: [{campo, nome, cor, tracejado?, largura?}] · faixa: banda da meta atrás das linhas + linha fina do centro
+  function graficoLinhas(el, linhas, {series, fmt, fmtEixo, incluirZero, extrasDica, rotular, faixa}) {
     el.replaceChildren();
     const valores = linhas.flatMap((r) => series.map((s) => r[s.campo])).filter((v) => v != null);
     if (!linhas.length || !valores.length) {
       el.innerHTML = '<div class="vazio">No data in this period.</div>';
       return;
     }
+    if (faixa) linhas.forEach((r) => { if (r[faixa.inferior] != null) valores.push(r[faixa.inferior], r[faixa.superior]); });
     const W = Math.max(280, el.clientWidth || 600);
     const estreito = W < 560;
-    const H = estreito ? 250 : 310, mt = 14, mb = 28;
+    const H = estreito ? 240 : 300, mt = 14, mb = 28;
     const mr = rotular && !estreito ? 96 : 14;
 
     let [ymin, ymax] = d3.extent(valores);
@@ -315,20 +786,9 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
       .attr('role', 'img').attr('tabindex', 0)
       .attr('aria-label', el.dataset.titulo + '. Use the arrow keys to move through the months.');
 
-    // eixo y: mede os rótulos para dimensionar a margem esquerda
-    const gy = svg.append('g').call(d3.axisLeft(y).ticks(5).tickFormat(fmtEixo).tickSize(0).tickPadding(0));
-    gy.select('.domain').remove();
-    let ml = 0;
-    gy.selectAll('text').each(function () { ml = Math.max(ml, this.getComputedTextLength()); });
-    ml = Math.ceil(ml) + 12;
-    gy.attr('transform', `translate(${ml - 8},0)`);
-
+    const ml = eixoY(svg, y, fmtEixo);
     const x = d3.scaleTime().domain(d3.extent(linhas, (r) => r.data)).range([ml + 4, W - mr]);
-
-    // grade recessiva + linha do zero destacada
-    svg.insert('g', ':first-child').selectAll('line').data(y.ticks(5)).join('line')
-      .attr('x1', ml).attr('x2', W - mr).attr('y1', (t) => y(t)).attr('y2', (t) => y(t))
-      .style('stroke', (t) => t === 0 ? 'rgba(255,255,255,.28)' : 'rgba(255,255,255,.07)');
+    grade(svg, y, ml, W - mr);
 
     const nTicks = Math.max(2, Math.floor((W - ml - mr) / 78));
     const meses = linhas.length;
@@ -336,32 +796,23 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
     const ticksX = meses <= 24 ? x.ticks(d3.timeMonth.every(Math.max(1, Math.ceil(meses / nTicks)))) : x.ticks(nTicks);
     svg.append('g').attr('transform', `translate(0,${H - mb})`)
       .call(d3.axisBottom(x).tickValues(ticksX).tickFormat(fmtX).tickSize(0).tickPadding(10))
-      .call((g) => g.select('.domain').style('stroke', 'rgba(255,255,255,.14)'));
+      .call((g) => g.select('.domain').style('stroke', 'var(--rule-2)'));
 
-    const defs = svg.append('defs');
-    const idBrilho = 'brilho-' + el.id;
-    const gl = defs.append('filter').attr('id', idBrilho).attr('x', '-10%').attr('y', '-30%').attr('width', '120%').attr('height', '160%');
-    gl.append('feGaussianBlur').attr('stdDeviation', 3).attr('result', 'b');
-    const fm = gl.append('feMerge'); fm.append('feMergeNode').attr('in', 'b'); fm.append('feMergeNode').attr('in', 'SourceGraphic');
+    if (faixa) {
+      const def = (r) => r[faixa.inferior] != null && r[faixa.superior] != null;
+      svg.append('path').datum(linhas).attr('fill', 'var(--band)')
+        .attr('d', d3.area().defined(def).x((r) => x(r.data)).y0((r) => y(r[faixa.inferior])).y1((r) => y(r[faixa.superior])).curve(d3.curveStepAfter));
+      svg.append('path').datum(linhas).attr('fill', 'none').style('stroke', 'var(--target)').style('stroke-width', 1)
+        .attr('d', d3.line().defined((r) => r[faixa.centro] != null).x((r) => x(r.data)).y((r) => y(r[faixa.centro])).curve(d3.curveStepAfter));
+    }
 
     for (const s of series) {
-      let cor = s.cor;
-      if (s.degrade) {
-        const id = 'degrade-' + el.id;
-        const lg = defs.append('linearGradient').attr('id', id).attr('gradientUnits', 'userSpaceOnUse')
-          .attr('x1', ml).attr('x2', W - mr).attr('y1', 0).attr('y2', 0);
-        lg.append('stop').attr('offset', '0%').attr('stop-color', '#5b8cff');
-        lg.append('stop').attr('offset', '100%').attr('stop-color', '#a77bff');
-        cor = `url(#${id})`;
-      }
-      // .defined() abre um buraco onde o valor é nulo em vez de ligar pontos inexistentes
-      // séries administradas (ex.: Selic, definida pelo Copom) mudam em degraus: `degrau: true`
+      // .defined() abre um buraco onde o valor é nulo; séries administradas (Selic) mudam em degraus
       const curva = s.degrau ? d3.curveStepAfter : d3.curveMonotoneX;
       const linha = d3.line().defined((r) => r[s.campo] != null).x((r) => x(r.data)).y((r) => y(r[s.campo])).curve(curva);
       svg.append('path').datum(linhas).attr('d', linha).attr('fill', 'none')
-        .style('stroke', cor).style('stroke-width', s.largura || 2).style('stroke-linejoin', 'round').style('stroke-linecap', 'round')
-        .style('stroke-dasharray', s.tracejado ? '6 4' : null)
-        .attr('filter', s.brilho ? `url(#${idBrilho})` : null);
+        .style('stroke', s.cor).style('stroke-width', s.largura || 2).style('stroke-linejoin', 'round').style('stroke-linecap', 'round')
+        .style('stroke-dasharray', s.tracejado ? '6 4' : null);
     }
 
     // rótulos diretos no fim de cada linha (último valor não nulo), afastados para não colidir
@@ -374,16 +825,16 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
       const g = svg.append('g');
       for (const r of rots) {
         g.append('circle').attr('cx', x(r.ult.data)).attr('cy', y(r.ult[r.s.campo])).attr('r', 4)
-          .style('fill', '#0b1022').style('stroke', r.s.cor).style('stroke-width', 2);
+          .style('fill', COR.superficie).style('stroke', r.s.cor).style('stroke-width', 2);
         g.append('text').attr('x', W - mr + 10).attr('y', r.y + 4)
-          .style('fill', 'var(--fg)').style('font-size', 'var(--fs-caption)').style('font-variant-numeric', 'tabular-nums')
+          .style('fill', 'var(--ink)').style('font-size', '12px').style('font-weight', 500).style('font-variant-numeric', 'tabular-nums')
           .text(r.s.curto + ' ' + fmt(r.ult[r.s.campo]));
       }
     }
 
-    // ---------- camada de hover: guia vertical + pontos + dica ----------
+    // camada de hover: guia vertical + pontos + dica (mesmo conteúdo no foco por teclado)
     const guia = svg.append('line').attr('y1', mt).attr('y2', H - mb)
-      .style('stroke', 'rgba(167,123,255,.55)').style('stroke-dasharray', '3 3').style('display', 'none');
+      .style('stroke', 'var(--ink-3)').style('stroke-width', 1).style('display', 'none');
     const pontos = svg.append('g').style('display', 'none');
     const dica = d3.select(el).append('div').attr('class', 'dica').style('display', 'none');
     const bis = d3.bisector((r) => r.data).center;
@@ -397,25 +848,15 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
       pontos.style('display', null).selectAll('circle')
         .data(series.filter((s) => r[s.campo] != null)).join('circle')
         .attr('cx', px).attr('cy', (s) => y(r[s.campo])).attr('r', 4.5)
-        .style('fill', (s) => s.degrade ? '#8f84ff' : s.cor).style('stroke', '#0b1022').style('stroke-width', 2);
+        .style('fill', (s) => s.cor).style('stroke', COR.superficie).style('stroke-width', 2);
       dica.node().replaceChildren();
       dica.append('div').attr('class', 'h').text(mesTxt(r.data));
       for (const s of series) {
-        const l = dica.append('div').attr('class', 'l');
-        const n = l.append('span');
-        n.append('i').style('background', s.degrade ? 'linear-gradient(90deg,#5b8cff,#a77bff)' : s.cor);
-        n.append('span').text(s.nome);
-        l.append('span').text(r[s.campo] == null ? 'no data' : fmt(r[s.campo]));
+        linhaDica(dica, s.nome, r[s.campo] == null ? 'no data' : fmt(r[s.campo]),
+          (i) => i.style('border-color', s.cor).style('border-top-style', s.tracejado ? 'dashed' : null));
       }
-      if (extrasDica) for (const [nome, valor] of extrasDica(r)) {
-        const l = dica.append('div').attr('class', 'l');
-        l.append('span').text(nome); l.append('span').text(valor);
-      }
-      dica.style('display', null);
-      const tw = dica.node().offsetWidth;
-      let left = px + 14;
-      if (left + tw > W) left = px - tw - 14;
-      dica.style('left', Math.max(0, left) + 'px');
+      if (extrasDica) for (const [nome, valor, chave] of extrasDica(r)) linhaDica(dica, nome, valor, chave);
+      posicionarDica(dica, px, W);
     };
     const esconder = () => { guia.style('display', 'none'); pontos.style('display', 'none'); dica.style('display', 'none'); };
 
@@ -423,13 +864,105 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
       .attr('fill', 'transparent')
       .on('pointermove pointerdown', (ev) => mostrar(bis(linhas, x.invert(d3.pointer(ev)[0]))))
       .on('pointerleave', esconder);
-    svg.on('keydown', (ev) => {
-      const passos = {ArrowLeft: -1, ArrowRight: 1, Home: -Infinity, End: Infinity};
-      if (!(ev.key in passos)) return;
-      ev.preventDefault();
-      const p = passos[ev.key];
-      mostrar(Number.isFinite(p) ? idx + p : (p < 0 ? 0 : linhas.length - 1));
-    }).on('focus', () => mostrar(idx)).on('blur', esconder);
+    teclado(svg, () => idx, linhas.length, mostrar, esconder);
+  }
+
+  // ---------- Gráfico de barras (colunas a partir do zero) ----------
+  // Uma cor; gap de 2px entre vizinhas; ponta de 4px arredondada no lado do dado, reta na base.
+  // Mês sem valor (IPCA ainda não divulgado) mantém o espaço no eixo mas não ganha barra.
+  function caminhoBarra(x0, w, yBase, yTopo) {
+    const r = Math.min(4, w / 2, Math.abs(yBase - yTopo));
+    const s = yTopo <= yBase ? 1 : -1; // positivo arredonda em cima; negativo, embaixo
+    return `M${x0},${yBase}V${yTopo + s * r}Q${x0},${yTopo} ${x0 + r},${yTopo}H${x0 + w - r}Q${x0 + w},${yTopo} ${x0 + w},${yTopo + s * r}V${yBase}Z`;
+  }
+
+  function graficoBarras(el, linhas, {campo, nome, cor, fmt, fmtEixo, extrasDica}) {
+    el.replaceChildren();
+    const comValor = linhas.filter((r) => r[campo] != null);
+    if (!linhas.length || !comValor.length) {
+      el.innerHTML = '<div class="vazio">No data in this period.</div>';
+      return;
+    }
+    const W = Math.max(280, el.clientWidth || 600);
+    const estreito = W < 560;
+    const H = estreito ? 220 : 260, mt = 20, mb = 28, mr = 14;
+
+    let [ymin, ymax] = d3.extent(comValor, (r) => r[campo]);
+    ymin = Math.min(0, ymin); ymax = Math.max(0, ymax);
+    if (ymin === ymax) ymax += 1;
+    const y = d3.scaleLinear().domain([ymin, ymax]).nice(5).range([H - mb, mt]);
+
+    const svg = d3.select(el).append('svg').attr('width', W).attr('height', H)
+      .attr('role', 'img').attr('tabindex', 0)
+      .attr('aria-label', el.dataset.titulo + '. Use the arrow keys to move through the months.');
+    const ml = eixoY(svg, y, fmtEixo);
+    grade(svg, y, ml, W - mr);
+
+    const x = d3.scaleBand().domain(linhas.map((r) => chaveMes(r.data))).range([ml + 4, W - mr]);
+    const bw = x.bandwidth();
+    const larg = Math.max(1, Math.min(24, bw - 2));   // 2px de superfície entre barras; nunca mais de 24px
+    const x0 = (r) => x(chaveMes(r.data)) + (bw - larg) / 2;
+    const meio = (r) => x(chaveMes(r.data)) + bw / 2;
+    const y0 = y(0);
+
+    const nTicks = Math.max(2, Math.floor((W - ml - mr) / 78));
+    let ticks;
+    if (linhas.length <= 24) {
+      const passo = Math.max(1, Math.ceil(linhas.length / nTicks));
+      ticks = linhas.filter((r, i) => (linhas.length - 1 - i) % passo === 0);
+    } else {
+      const jans = linhas.filter((r) => r.data.getMonth() === 0);
+      const passo = Math.max(1, Math.ceil(jans.length / nTicks));
+      ticks = jans.filter((r, i) => (jans.length - 1 - i) % passo === 0);
+    }
+    const fmtX = linhas.length <= 24 ? mesCurto : (d) => String(d.getFullYear());
+    svg.append('g').attr('transform', `translate(0,${H - mb})`)
+      .selectAll('g').data(ticks).join('g').attr('class', 'tick').attr('transform', (r) => `translate(${meio(r)},0)`)
+      .append('text').attr('y', 10).attr('dy', '.71em').attr('text-anchor', 'middle').text((r) => fmtX(r.data));
+
+    const barras = svg.append('g').selectAll('path').data(comValor).join('path')
+      .attr('d', (r) => caminhoBarra(x0(r), larg, y0, r[campo] === 0 ? y0 - 1 : y(r[campo])))
+      .style('fill', cor);
+
+    // rótulos seletivos: o último mês divulgado e o extremo do período (se não colidirem)
+    const ult = comValor[comValor.length - 1];
+    const extremo = comValor.reduce((a, b) => Math.abs(b[campo]) > Math.abs(a[campo]) ? b : a);
+    const rotulos = [ult];
+    if (extremo !== ult && Math.abs(meio(extremo) - meio(ult)) > 100) rotulos.push(extremo);
+    const gr = svg.append('g');
+    for (const r of rotulos) {
+      const v = r[campo];
+      // acima da barra mais alta entre as vizinhas que o texto cobre, para não pousar em cima delas
+      const vizinhas = comValor.filter((o) => Math.abs(meio(o) - meio(r)) < 40);
+      const yTxt = v >= 0 ? Math.min(...vizinhas.map((o) => y(Math.max(0, o[campo])))) - 6
+        : Math.max(...vizinhas.map((o) => y(Math.min(0, o[campo])))) + 14;
+      let xTxt = meio(r), ancora = 'middle';
+      if (xTxt > W - mr - 44) { xTxt = x0(r) + larg; ancora = 'end'; } else if (xTxt < ml + 44) { xTxt = x0(r); ancora = 'start'; }
+      gr.append('text').attr('x', xTxt).attr('y', yTxt).attr('text-anchor', ancora)
+        .style('fill', 'var(--ink)').style('font-size', '12px').style('font-weight', 500).style('font-variant-numeric', 'tabular-nums')
+        .text(mesCurto(r.data) + ' ' + fmt(v));
+    }
+
+    // hover/foco: a coluna inteira do mês é o alvo (maior que a barra); a barra ativa clareia
+    const clara = d3.color(cor).brighter(0.7).formatHex();
+    const dica = d3.select(el).append('div').attr('class', 'dica').style('display', 'none');
+    let idx = linhas.length - 1;
+    const mostrar = (i) => {
+      idx = Math.max(0, Math.min(linhas.length - 1, i));
+      const r = linhas[idx];
+      barras.style('fill', (b) => b === r ? clara : cor);
+      dica.node().replaceChildren();
+      dica.append('div').attr('class', 'h').text(mesTxt(r.data));
+      linhaDica(dica, nome, r[campo] == null ? 'not released yet' : fmt(r[campo]), (i) => i.style('border-color', cor));
+      if (extrasDica) for (const [n, v] of extrasDica(r)) linhaDica(dica, n, v);
+      posicionarDica(dica, meio(r), W);
+    };
+    const esconder = () => { barras.style('fill', cor); dica.style('display', 'none'); };
+    svg.append('g').selectAll('rect').data(linhas).join('rect')
+      .attr('x', (r) => x(chaveMes(r.data))).attr('width', bw).attr('y', 0).attr('height', H - mb).attr('fill', 'transparent')
+      .on('pointermove pointerdown', (ev, r) => mostrar(linhas.indexOf(r)))
+      .on('pointerleave', esconder);
+    teclado(svg, () => idx, linhas.length, mostrar, esconder);
   }
 
   // ---------- Período, gráficos e tabela ----------
@@ -441,22 +974,36 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
   }
 
   const SERIES_JUROS = [
-    {campo: 'selic_meta_aa', nome: 'Selic target', curto: 'Selic', cor: '#5b8cff', largura: 2.5, degrau: true},
-    {campo: 'ipca_12m', nome: 'IPCA 12m', curto: 'IPCA', cor: '#c97f35', largura: 2.5},
-    {campo: 'juro_real_ex_post_aa', nome: 'Ex-post real rate', curto: 'Real', cor: '#a274f5', tracejado: true, largura: 2},
+    {campo: 'selic_meta_aa', nome: 'Selic target', curto: 'Selic', cor: COR.selic, largura: 2, degrau: true},
+    {campo: 'ipca_12m', nome: 'IPCA 12m', curto: 'IPCA', cor: COR.ipca, largura: 2},
+    {campo: 'juro_real_ex_post_aa', nome: 'Ex-post real rate', curto: 'Real', cor: COR.juro, tracejado: true, largura: 2},
   ];
 
   function desenharGraficos() {
     const linhas = linhasDoPeriodo();
     const elJ = document.getElementById('grafico-juros');
-    elJ.dataset.titulo = 'Selic target, 12-month IPCA and ex-post real interest rate, in % per year';
+    elJ.dataset.titulo = 'Selic target, 12-month IPCA with the inflation target band, and ex-post real interest rate, in % per year';
     graficoLinhas(elJ, linhas, {
       series: SERIES_JUROS, fmt: pct, fmtEixo: (v) => f0(v) + '%', incluirZero: true, rotular: true,
+      faixa: {inferior: 'meta_inflacao_inferior', superior: 'meta_inflacao_superior', centro: 'meta_inflacao'},
+      extrasDica: (r) => r.meta_inflacao == null ? [] : [
+        ['Inflation target', pct(r.meta_inflacao), (i) => i.style('border-color', 'var(--target)').style('border-top-width', '1px')],
+        ['Tolerance band', f2(r.meta_inflacao_inferior) + '–' + f2(r.meta_inflacao_superior) + '%', (i) => i.attr('class', 'faixa')],
+        ['IPCA vs. band', r.status_meta_inflacao ? statusTxt(r) : 'no data'],
+      ],
     });
+
+    const elI = document.getElementById('grafico-ipca-mensal');
+    elI.dataset.titulo = 'Monthly IPCA, change in consumer prices in each month, in %';
+    graficoBarras(elI, linhas, {
+      campo: 'ipca_mensal', nome: 'IPCA month', cor: COR.ipca, fmt: pct, fmtEixo: (v) => f1(v) + '%',
+      extrasDica: (r) => [['IPCA 12m', r.ipca_12m == null ? 'no data' : pct(r.ipca_12m)]],
+    });
+
     const elD = document.getElementById('grafico-dolar');
     elD.dataset.titulo = 'USD/BRL PTAX selling rate, monthly average in reais';
     graficoLinhas(elD, linhas, {
-      series: [{campo: 'dolar_ptax_medio', nome: 'Monthly avg.', cor: '#5b8cff', degrade: true, brilho: true, largura: 2.5}],
+      series: [{campo: 'dolar_ptax_medio', nome: 'Monthly avg.', cor: COR.dolar, largura: 2}],
       fmt: (v) => brl(v), fmtEixo: (v) => 'R$ ' + f1(v), incluirZero: false, rotular: false,
       extrasDica: (r) => [['Month end', brl(r.dolar_ptax_fim_mes)]],
     });
@@ -467,7 +1014,8 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
     const tbody = document.querySelector('#tabela tbody');
     tbody.replaceChildren(...[...linhas].reverse().map((r) => {
       const tr = document.createElement('tr');
-      const cels = [mesTxt(r.data), pct(r.selic_meta_aa), pct(r.ipca_mensal), pct(r.ipca_12m), pct(r.juro_real_ex_post_aa), brl(r.dolar_ptax_medio), brl(r.dolar_ptax_fim_mes)];
+      const cels = [mesTxt(r.data), pct(r.selic_meta_aa), pct(r.ipca_mensal), pct(r.ipca_12m), bandaTxt(r), statusTxt(r),
+        pct(r.juro_real_ex_post_aa), brl(r.dolar_ptax_medio), brl(r.dolar_ptax_fim_mes)];
       cels.forEach((t, i) => { const td = document.createElement(i ? 'td' : 'th'); if (!i) td.scope = 'row'; td.textContent = t; tr.appendChild(td); });
       return tr;
     }));
@@ -483,15 +1031,18 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
   document.querySelectorAll('.periodos button').forEach((b) => b.addEventListener('click', () => aplicarPeriodo(b.dataset.periodo, true)));
   window.addEventListener('hashchange', () => aplicarPeriodo(lerPeriodoDaUrl(), false));
 
-  // redesenha ao mudar a largura (rotação do celular, redimensionar a janela)
+  // redesenha o que mede a largura (régua, sparklines, gráficos) ao girar o celular ou redimensionar
+  const desenharMedidos = () => { desenharRegua(); desenharLedger(); desenharGraficos(); };
   let larguraAnterior = 0, agendado = 0;
   new ResizeObserver((entradas) => {
     const w = Math.round(entradas[0].contentRect.width);
     if (!MESES_DADOS.length || w === larguraAnterior) return;
     larguraAnterior = w;
     cancelAnimationFrame(agendado);
-    agendado = requestAnimationFrame(desenharGraficos);
+    agendado = requestAnimationFrame(desenharMedidos);
   }).observe(document.getElementById('grafico-juros'));
+  // as fontes web mudam a largura dos textos medidos (eixos, rótulos da régua): redesenha quando chegarem
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (MESES_DADOS.length) desenharMedidos(); });
 
   // ---------- Carga ----------
   periodo = lerPeriodoDaUrl();
@@ -504,19 +1055,32 @@ footer nav{display:flex;flex-wrap:wrap;gap:6px 16px}
         .map((m) => ({...m, data: paraData(m.mes_referencia)}))
         .sort((a, b) => a.data - b.data);
       porMes = new Map(MESES_DADOS.map((m) => [chaveMes(m.data), m]));
+      // Decisões do Copom (ADR 0008). Ausentes em JSONs antigos: a fita some e a manchete fica só com a inflação.
+      DECISOES = (dados.decisoes_copom || [])
+        .filter((d) => d.data_vigencia && d.variacao_bp)
+        .map((d) => ({...d, data: paraData(d.data_vigencia)}))
+        .sort((a, b) => a.data - b.data);
       const fmtBrasilia = new Intl.DateTimeFormat('en-US', {dateStyle: 'long', timeStyle: 'short', timeZone: 'America/Sao_Paulo'});
+      const fmtCurto = new Intl.DateTimeFormat('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Sao_Paulo'});
       if (dados.gerado_em) {
-        document.getElementById('gerado-em').textContent = 'generated ' + fmtBrasilia.format(new Date(dados.gerado_em)) + ' (Brasília time)';
+        gerado = new Date(dados.gerado_em);
+        document.getElementById('gerado-em').textContent = 'generated ' + fmtBrasilia.format(gerado) + ' (Brasília time)';
+        const partes = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {year: 'numeric', month: '2-digit', timeZone: 'America/Sao_Paulo'})
+          .formatToParts(gerado).map((p) => [p.type, p.value]));
+        mesGeracao = partes.year + '-' + partes.month;
       }
-      // Última carga por fonte, de raw.cargas (ADR 0006). Ausente em JSONs antigos: não mostra nada.
-      const NOMES_FONTES = {bcb: 'BCB', ibge: 'IBGE'};
-      const cargas = Object.entries(dados.ultimas_cargas || {})
-        .filter(([, quando]) => !Number.isNaN(new Date(quando).getTime()))
-        .map(([fonte, quando]) => (NOMES_FONTES[fonte] || fonte) + ' on ' + fmtBrasilia.format(new Date(quando)));
+      // Última carga por fonte, de raw.cargas (ADR 0006). Ausente em JSONs antigos: fica o rótulo das fontes.
+      const cargas = Object.values(dados.ultimas_cargas || {}).map((q) => new Date(q)).filter((d) => !Number.isNaN(d.getTime()));
       if (cargas.length) {
-        document.getElementById('ultimas-cargas').textContent = ' · last load: ' + cargas.join(', ');
+        const el = document.getElementById('ultima-carga');
+        const b = document.createElement('b'); b.textContent = fmtCurto.format(new Date(Math.max(...cargas))).replace(',', '') + ' BRT';
+        el.replaceChildren('BCB SGS · IBGE · last load ', b);
       }
-      desenharKpis();
+      desenharManchete();
+      desenharRegua();
+      desenharLedger();
+      desenharFita();
+      desenharAlertas();
       aplicarPeriodo(periodo, false);
     })
     .catch((e) => {

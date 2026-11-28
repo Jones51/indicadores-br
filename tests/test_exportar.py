@@ -7,6 +7,7 @@ import pytest
 from indicadores.exportar import (
     COLUNAS,
     exportar,
+    ler_decisoes_copom,
     ler_ultimas_cargas,
     linhas_para_meses,
     montar_payload,
@@ -23,6 +24,11 @@ create table marts.fct_indicadores_mensais (
     juro_real_ex_post_aa double,
     dolar_ptax_medio     double,
     dolar_ptax_fim_mes   double,
+    meta_inflacao        double,
+    meta_inflacao_inferior double,
+    meta_inflacao_superior double,
+    status_meta_inflacao varchar,
+    meses_seguidos_status_meta bigint,
     coluna_extra         varchar  -- coluna fora do contrato: não deve ir para o JSON
 );
 """
@@ -34,11 +40,14 @@ def warehouse(tmp_path):
     con = duckdb.connect(str(caminho))
     con.execute(DDL_MART)
     con.executemany(
-        "insert into marts.fct_indicadores_mensais values (?, ?, ?, ?, ?, ?, ?, ?)",
+        "insert into marts.fct_indicadores_mensais values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [
             # fora de ordem de propósito: a exportação ordena por mês
-            (date(2024, 2, 1), 11.25, None, None, None, 4.9712345678, 4.98, "x"),
-            (date(2024, 1, 1), 11.75, 0.42, 4.51, 6.9286, 4.9, 4.95, "x"),
+            # mês corrente: sem IPCA, mas com meta (o status e a sequência ficam nulos)
+            (date(2024, 2, 1), 11.25, None, None, None, 4.9712345678, 4.98, 3.0, 1.5, 4.5)
+            + (None, None, "x"),
+            (date(2024, 1, 1), 11.75, 0.42, 4.51, 6.9286, 4.9, 4.95, 3.0, 1.5, 4.5)
+            + ("acima", 4, "x"),
         ],
     )
     con.close()
@@ -46,7 +55,10 @@ def warehouse(tmp_path):
 
 
 def test_linhas_para_meses_converte_datas_arredonda_e_trata_nulos():
-    linhas = [(date(2024, 1, 1), 11.75, None, 4.5, float("nan"), 4.9712345678, 5)]
+    linhas = [
+        (date(2024, 1, 1), 11.75, None, 4.5, float("nan"), 4.9712345678, 5)
+        + (3.0, 1.5, 4.5, "dentro", 12)
+    ]
     assert linhas_para_meses(linhas) == [
         {
             "mes_referencia": "2024-01-01",
@@ -56,6 +68,11 @@ def test_linhas_para_meses_converte_datas_arredonda_e_trata_nulos():
             "juro_real_ex_post_aa": None,
             "dolar_ptax_medio": 4.9712,
             "dolar_ptax_fim_mes": 5,
+            "meta_inflacao": 3.0,
+            "meta_inflacao_inferior": 1.5,
+            "meta_inflacao_superior": 4.5,
+            "status_meta_inflacao": "dentro",
+            "meses_seguidos_status_meta": 12,
         }
     ]
 
@@ -71,6 +88,7 @@ def test_montar_payload_normaliza_gerado_em_para_utc():
         "gerado_em": "2026-11-27T12:30:15+00:00",
         "fonte": "BCB SGS",
         "ultimas_cargas": {},
+        "decisoes_copom": [],
         "meses": [],
     }
 
@@ -124,8 +142,13 @@ def test_exportar_grava_json_compacto_ordenado(warehouse, tmp_path):
     assert [m["mes_referencia"] for m in meses] == ["2024-01-01", "2024-02-01"]
     assert all(tuple(m) == COLUNAS for m in meses)
     assert meses[1]["ipca_12m"] is None
+    assert meses[1]["meta_inflacao_superior"] == 4.5  # meta existe mesmo sem IPCA
+    assert meses[1]["status_meta_inflacao"] is None
+    assert meses[0]["status_meta_inflacao"] == "acima"
+    assert meses[0]["meses_seguidos_status_meta"] == 4
     assert meses[1]["dolar_ptax_medio"] == 4.9712
     assert payload["ultimas_cargas"] == {}  # warehouse sem raw.cargas
+    assert payload["decisoes_copom"] == []  # warehouse sem fct_decisoes_copom
 
 
 def test_exportar_inclui_ultima_carga_por_fonte(warehouse, tmp_path):
@@ -152,3 +175,46 @@ def test_exportar_abre_warehouse_somente_leitura(warehouse, tmp_path):
 def test_exportar_falha_sem_warehouse(tmp_path):
     with pytest.raises(FileNotFoundError):
         exportar(tmp_path / "dados.json", tmp_path / "nao_existe.duckdb")
+
+
+def _registrar_decisoes(caminho, n):
+    con = duckdb.connect(str(caminho))
+    con.execute(
+        "create table marts.fct_decisoes_copom (data_vigencia date, selic_anterior_aa double, "
+        "selic_nova_aa double, variacao_bp integer)"
+    )
+    # n cortes de 25 bp, um por mês a partir de jan/2024, inseridos fora de ordem
+    linhas = [(date(2024, 1 + i, 18), 15.0 - 0.25 * i, 14.75 - 0.25 * i, -25) for i in range(n)]
+    con.executemany("insert into marts.fct_decisoes_copom values (?, ?, ?, ?)", linhas[::-1])
+    con.close()
+
+
+def test_ler_decisoes_copom_sem_tabela_retorna_vazio():
+    con = duckdb.connect()
+    assert ler_decisoes_copom(con) == []
+    con.close()
+
+
+def test_ler_decisoes_copom_pega_as_ultimas_em_ordem_cronologica(warehouse):
+    _registrar_decisoes(warehouse, 5)
+    con = duckdb.connect(str(warehouse), read_only=True)
+    try:
+        decisoes = ler_decisoes_copom(con, limite=3)
+    finally:
+        con.close()
+    assert [d["data_vigencia"] for d in decisoes] == ["2024-03-18", "2024-04-18", "2024-05-18"]
+    assert decisoes[-1] == {
+        "data_vigencia": "2024-05-18",
+        "selic_anterior_aa": 14.0,
+        "selic_nova_aa": 13.75,
+        "variacao_bp": -25,
+    }
+
+
+def test_exportar_inclui_decisoes_copom(warehouse, tmp_path):
+    _registrar_decisoes(warehouse, 2)
+    saida = tmp_path / "dados.json"
+    exportar(saida, warehouse)
+    payload = json.loads(saida.read_text(encoding="utf-8"))
+    assert [d["variacao_bp"] for d in payload["decisoes_copom"]] == [-25, -25]
+    assert len(payload["meses"]) == 2

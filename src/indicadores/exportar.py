@@ -24,7 +24,17 @@ COLUNAS = (
     "juro_real_ex_post_aa",
     "dolar_ptax_medio",
     "dolar_ptax_fim_mes",
+    "meta_inflacao",
+    "meta_inflacao_inferior",
+    "meta_inflacao_superior",
+    "status_meta_inflacao",
+    "meses_seguidos_status_meta",
 )
+
+# Fita do Copom no dashboard: últimas decisões de `marts.fct_decisoes_copom`
+# (mudanças da meta Selic).
+COLUNAS_DECISOES = ("data_vigencia", "selic_anterior_aa", "selic_nova_aa", "variacao_bp")
+DECISOES_PADRAO = 12
 
 CASAS_DECIMAIS = 4  # suficiente para % com 2 casas e PTAX com 4; corta o ruído de float das médias
 
@@ -50,15 +60,35 @@ def ler_meses(con: duckdb.DuckDBPyConnection) -> list[dict[str, Any]]:
     return linhas_para_meses(con.execute(sql).fetchall())
 
 
+def _tabela_existe(con: duckdb.DuckDBPyConnection, schema: str, tabela: str) -> bool:
+    sql = "select count(*) from duckdb_tables() where schema_name = ? and table_name = ?"
+    return bool(con.execute(sql, [schema, tabela]).fetchone()[0])
+
+
+def ler_decisoes_copom(
+    con: duckdb.DuckDBPyConnection, limite: int = DECISOES_PADRAO
+) -> list[dict[str, Any]]:
+    """Últimas `limite` decisões do Copom, em ordem cronológica (vazio se o modelo não existir)."""
+    if not _tabela_existe(con, "marts", "fct_decisoes_copom"):
+        return []
+    sql = (
+        f"select {', '.join(COLUNAS_DECISOES)} from ("
+        f"select * from marts.fct_decisoes_copom order by data_vigencia desc limit ?"
+        f") order by data_vigencia"
+    )
+    linhas = con.execute(sql, [limite]).fetchall()
+    return [
+        {col: _valor_json(v) for col, v in zip(COLUNAS_DECISOES, linha, strict=True)}
+        for linha in linhas
+    ]
+
+
 def ler_ultimas_cargas(con: duckdb.DuckDBPyConnection) -> dict[str, datetime]:
     """Instante da última carga de cada fonte, de `raw.cargas` (vazio se a tabela não existir).
 
     Lê `epoch()` em vez do `timestamptz` para não depender do fuso da sessão nem do tzdata.
     """
-    existe = con.execute(
-        "select count(*) from duckdb_tables() where schema_name = 'raw' and table_name = 'cargas'"
-    ).fetchone()[0]
-    if not existe:
+    if not _tabela_existe(con, "raw", "cargas"):
         return {}
     linhas = con.execute(
         "select fonte, epoch(max(executado_em)) from raw.cargas group by fonte order by fonte"
@@ -74,11 +104,13 @@ def montar_payload(
     meses: list[dict[str, Any]],
     gerado_em: datetime,
     ultimas_cargas: dict[str, datetime] | None = None,
+    decisoes_copom: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     return {
         "gerado_em": _iso_utc(gerado_em),
         "fonte": "BCB SGS",
         "ultimas_cargas": {f: _iso_utc(t) for f, t in sorted((ultimas_cargas or {}).items())},
+        "decisoes_copom": decisoes_copom or [],
         "meses": meses,
     }
 
@@ -92,9 +124,10 @@ def exportar(saida: Path | str = SAIDA_PADRAO, db_path: Path | str = DUCKDB_PATH
     try:
         meses = ler_meses(con)
         ultimas_cargas = ler_ultimas_cargas(con)
+        decisoes = ler_decisoes_copom(con)
     finally:
         con.close()
-    payload = montar_payload(meses, datetime.now(UTC), ultimas_cargas)
+    payload = montar_payload(meses, datetime.now(UTC), ultimas_cargas, decisoes)
     saida.parent.mkdir(parents=True, exist_ok=True)
     texto = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
     saida.write_text(texto, encoding="utf-8")

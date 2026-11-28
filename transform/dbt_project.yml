@@ -4,6 +4,7 @@ config-version: 2
 profile: indicadores_br
 
 model-paths: ["models"]
+seed-paths: ["seeds"]
 test-paths: ["tests"]
 macro-paths: ["macros"]
 target-path: "target"
@@ -19,3 +20,9 @@ models:
     marts:
       +schema: marts
       +materialized: table
+
+# Tabelas de referência mantidas à mão (ex.: metas de inflação do CMN, ADR 0007).
+# O `dbt build` carrega os seeds antes dos modelos que dependem deles.
+seeds:
+  indicadores_br:
+    +schema: seeds

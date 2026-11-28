@@ -51,3 +51,24 @@ models:
           Quantos meses seguidos, terminando neste, o IPCA 12m está com o mesmo
           `status_meta_inflacao` (1 = o status mudou neste mês). Na meta contínua (desde 2025),
           6 meses seguidos fora da banda caracterizam descumprimento. Nulo quando o status é nulo.
+
+  - name: fct_decisoes_copom
+    description: >
+      Uma linha por mudança da meta Selic, derivada da série diária SGS 432. A data é a da
+      **vigência** na série (primeiro dia com a meta nova), que costuma ser o dia útil seguinte à
+      reunião do Copom: não é a data da reunião. Manutenções da taxa não aparecem (a série não
+      muda). Só cobre o período ingerido (desde 2010): a primeira observação não tem anterior e
+      não conta como decisão (ADR 0008).
+    columns:
+      - name: data_vigencia
+        description: Primeiro dia em que a SGS 432 mostra a nova meta Selic (chave).
+        data_tests: [unique, not_null]
+      - name: selic_anterior_aa
+        description: Meta Selic vigente antes da mudança (% a.a.).
+        data_tests: [not_null]
+      - name: selic_nova_aa
+        description: Meta Selic a partir de `data_vigencia` (% a.a.).
+        data_tests: [not_null]
+      - name: variacao_bp
+        description: Variação da meta em pontos-base (selic_nova − selic_anterior, × 100); positivo = alta, negativo = corte. Nunca zero.
+        data_tests: [not_null]

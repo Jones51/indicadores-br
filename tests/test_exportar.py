@@ -7,6 +7,7 @@ import pytest
 from indicadores.exportar import (
     COLUNAS,
     exportar,
+    ler_decisoes_copom,
     ler_ultimas_cargas,
     linhas_para_meses,
     montar_payload,
@@ -87,6 +88,7 @@ def test_montar_payload_normaliza_gerado_em_para_utc():
         "gerado_em": "2026-11-27T12:30:15+00:00",
         "fonte": "BCB SGS",
         "ultimas_cargas": {},
+        "decisoes_copom": [],
         "meses": [],
     }
 
@@ -146,6 +148,7 @@ def test_exportar_grava_json_compacto_ordenado(warehouse, tmp_path):
     assert meses[0]["meses_seguidos_status_meta"] == 4
     assert meses[1]["dolar_ptax_medio"] == 4.9712
     assert payload["ultimas_cargas"] == {}  # warehouse sem raw.cargas
+    assert payload["decisoes_copom"] == []  # warehouse sem fct_decisoes_copom
 
 
 def test_exportar_inclui_ultima_carga_por_fonte(warehouse, tmp_path):
@@ -172,3 +175,46 @@ def test_exportar_abre_warehouse_somente_leitura(warehouse, tmp_path):
 def test_exportar_falha_sem_warehouse(tmp_path):
     with pytest.raises(FileNotFoundError):
         exportar(tmp_path / "dados.json", tmp_path / "nao_existe.duckdb")
+
+
+def _registrar_decisoes(caminho, n):
+    con = duckdb.connect(str(caminho))
+    con.execute(
+        "create table marts.fct_decisoes_copom (data_vigencia date, selic_anterior_aa double, "
+        "selic_nova_aa double, variacao_bp integer)"
+    )
+    # n cortes de 25 bp, um por mês a partir de jan/2024, inseridos fora de ordem
+    linhas = [(date(2024, 1 + i, 18), 15.0 - 0.25 * i, 14.75 - 0.25 * i, -25) for i in range(n)]
+    con.executemany("insert into marts.fct_decisoes_copom values (?, ?, ?, ?)", linhas[::-1])
+    con.close()
+
+
+def test_ler_decisoes_copom_sem_tabela_retorna_vazio():
+    con = duckdb.connect()
+    assert ler_decisoes_copom(con) == []
+    con.close()
+
+
+def test_ler_decisoes_copom_pega_as_ultimas_em_ordem_cronologica(warehouse):
+    _registrar_decisoes(warehouse, 5)
+    con = duckdb.connect(str(warehouse), read_only=True)
+    try:
+        decisoes = ler_decisoes_copom(con, limite=3)
+    finally:
+        con.close()
+    assert [d["data_vigencia"] for d in decisoes] == ["2024-03-18", "2024-04-18", "2024-05-18"]
+    assert decisoes[-1] == {
+        "data_vigencia": "2024-05-18",
+        "selic_anterior_aa": 14.0,
+        "selic_nova_aa": 13.75,
+        "variacao_bp": -25,
+    }
+
+
+def test_exportar_inclui_decisoes_copom(warehouse, tmp_path):
+    _registrar_decisoes(warehouse, 2)
+    saida = tmp_path / "dados.json"
+    exportar(saida, warehouse)
+    payload = json.loads(saida.read_text(encoding="utf-8"))
+    assert [d["variacao_bp"] for d in payload["decisoes_copom"]] == [-25, -25]
+    assert len(payload["meses"]) == 2

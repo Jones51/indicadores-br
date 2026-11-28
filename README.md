@@ -31,6 +31,18 @@ automatically on every push — with incremental ingestion reconciled weekly aga
 > CLI) are kept in Portuguese, matching the source data and the project's conventions
 > ([`CLAUDE.md`](CLAUDE.md)). ADRs are in Portuguese.
 
+## 🎯 Business problem
+
+Tracking Selic, inflation and the exchange rate usually means downloading series by hand from different official sources, and trusting that nothing was revised. This project automates ingestion, tests the data and publishes a single warehouse and dashboard.
+
+## ✅ Results
+
+- Public [dashboard](https://jones51.github.io/indicadores-br/dashboard/), [dbt docs](https://jones51.github.io/indicadores-br/) and DuckDB warehouse, no credentials needed
+- Runs on GitHub Actions on pushes to `main` and every Monday
+- Weekly full reload reconciles the incremental load
+
+## 🧰 What I built
+
 | What I Built | How I Implemented | Where to Look |
 | --- | --- | --- |
 | **Ingestion** | one extractor per source, pure parsing split from HTTP, **incremental** load with a revision margin — idempotent and audited | [`src/indicadores/`](src/indicadores/) · [ADR 0006](docs/adr/0006-ingestao-incremental.md) |

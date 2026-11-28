@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "skills": {
+    "kpi-dashboard-design": {
+      "source": "wshobson/agents",
+      "commit": "c96b5f6552dba32e4492307493ee613581430715",
+      "sourceType": "github",
+      "skillPath": "plugins/business-analytics/skills/kpi-dashboard-design/SKILL.md",
+      "computedHash": "2ef14e74c531b56105ec44299b71fca9ecd43ae0ce6f393b5a1c7f97b2b3da90"
+    }
+  }
+}
